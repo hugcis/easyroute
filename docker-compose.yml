@@ -31,6 +31,26 @@ services:
       timeout: 5s
       retries: 5
 
+  # osm2pgsql for importing OSM data
+  # This is not a long-running service, but a tool container
+  # Use it with: docker-compose run --rm osm2pgsql <args>
+  osm2pgsql:
+    image: ghcr.io/openstreetmap/osm2pgsql:latest
+    container_name: easyroute_osm2pgsql
+    profiles: ["tools"]  # Only start when explicitly requested
+    depends_on:
+      - postgres
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: easyroute
+      PGUSER: easyroute_user
+      PGPASSWORD: easyroute_pass
+    volumes:
+      - ./osm/data:/data:ro          # OSM data files
+      - ./osm:/osm:ro                # Style and config files
+    network_mode: "host"
+
 volumes:
   postgres_data:
   redis_data:
