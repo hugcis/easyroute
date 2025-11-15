@@ -468,122 +468,122 @@ impl OverpassClient {
     }
 
     fn infer_category(&self, tags: &HashMap<String, String>) -> Option<PoiCategory> {
-        // Check tourism tags
-        if let Some(tourism_type) = tags.get("tourism") {
-            return match tourism_type.as_str() {
-                "monument" | "memorial" => Some(PoiCategory::Monument),
-                "viewpoint" => Some(PoiCategory::Viewpoint),
-                "museum" | "gallery" => Some(PoiCategory::Museum),
-                "attraction" => Some(PoiCategory::Cultural),
-                "artwork" => Some(PoiCategory::Artwork),
-                "wine_cellar" => Some(PoiCategory::Winery),
-                _ => None,
-            };
-        }
+        // Order matters: more specific tags first, then generic fallbacks
+        self.check_tourism_tags(tags)
+            .or_else(|| self.check_historic_tags(tags))
+            .or_else(|| self.check_amenity_tags(tags))
+            .or_else(|| self.check_leisure_tags(tags))
+            .or_else(|| self.check_natural_tags(tags))
+            .or_else(|| self.check_waterway_tags(tags))
+            .or_else(|| self.check_man_made_tags(tags))
+            .or_else(|| self.check_craft_tags(tags))
+            .or_else(|| self.check_building_tags(tags))
+            .or_else(|| self.check_place_tags(tags))
+            .or_else(|| self.check_shop_tags(tags))
+            .or_else(|| self.check_boundary_tags(tags))
+    }
 
-        // Check historic tags - prioritize specific types
-        if let Some(historic_type) = tags.get("historic") {
-            return match historic_type.as_str() {
-                "castle" | "fort" | "fortress" => Some(PoiCategory::Castle),
-                _ => Some(PoiCategory::Historic), // Catch-all for other historic sites
-            };
-        }
+    fn check_tourism_tags(&self, tags: &HashMap<String, String>) -> Option<PoiCategory> {
+        tags.get("tourism").and_then(|t| match t.as_str() {
+            "monument" | "memorial" => Some(PoiCategory::Monument),
+            "viewpoint" => Some(PoiCategory::Viewpoint),
+            "museum" | "gallery" => Some(PoiCategory::Museum),
+            "attraction" => Some(PoiCategory::Cultural),
+            "artwork" => Some(PoiCategory::Artwork),
+            "wine_cellar" => Some(PoiCategory::Winery),
+            _ => None,
+        })
+    }
 
-        // Check amenity tags
-        if let Some(amenity_type) = tags.get("amenity") {
-            return match amenity_type.as_str() {
-                "restaurant" => Some(PoiCategory::Restaurant),
-                "cafe" => Some(PoiCategory::Cafe),
-                "place_of_worship" => Some(PoiCategory::Church),
-                "fountain" => Some(PoiCategory::Fountain),
-                "marketplace" => Some(PoiCategory::Market),
-                "arts_centre" => Some(PoiCategory::Cultural),
-                "theatre" | "cinema" => Some(PoiCategory::Theatre),
-                "library" => Some(PoiCategory::Library),
-                _ => None,
-            };
-        }
+    fn check_historic_tags(&self, tags: &HashMap<String, String>) -> Option<PoiCategory> {
+        tags.get("historic").map(|h| match h.as_str() {
+            "castle" | "fort" | "fortress" => PoiCategory::Castle,
+            _ => PoiCategory::Historic, // Catch-all for other historic sites
+        })
+    }
 
-        // Check leisure tags
-        if let Some(leisure_type) = tags.get("leisure") {
-            return match leisure_type.as_str() {
-                "park" | "garden" => Some(PoiCategory::Park),
-                "nature_reserve" => Some(PoiCategory::NatureReserve),
-                "beach_resort" => Some(PoiCategory::Waterfront),
-                "plaza" => Some(PoiCategory::Plaza),
-                _ => None,
-            };
-        }
+    fn check_amenity_tags(&self, tags: &HashMap<String, String>) -> Option<PoiCategory> {
+        tags.get("amenity").and_then(|a| match a.as_str() {
+            "restaurant" => Some(PoiCategory::Restaurant),
+            "cafe" => Some(PoiCategory::Cafe),
+            "place_of_worship" => Some(PoiCategory::Church),
+            "fountain" => Some(PoiCategory::Fountain),
+            "marketplace" => Some(PoiCategory::Market),
+            "arts_centre" => Some(PoiCategory::Cultural),
+            "theatre" | "cinema" => Some(PoiCategory::Theatre),
+            "library" => Some(PoiCategory::Library),
+            _ => None,
+        })
+    }
 
-        // Check natural tags
-        if let Some(natural_type) = tags.get("natural") {
-            return match natural_type.as_str() {
-                "beach" | "coastline" => Some(PoiCategory::Waterfront),
-                _ => None,
-            };
-        }
+    fn check_leisure_tags(&self, tags: &HashMap<String, String>) -> Option<PoiCategory> {
+        tags.get("leisure").and_then(|l| match l.as_str() {
+            "park" | "garden" => Some(PoiCategory::Park),
+            "nature_reserve" => Some(PoiCategory::NatureReserve),
+            "beach_resort" => Some(PoiCategory::Waterfront),
+            "plaza" => Some(PoiCategory::Plaza),
+            _ => None,
+        })
+    }
 
-        // Check waterway tags
-        if let Some(waterway_type) = tags.get("waterway") {
-            return match waterway_type.as_str() {
-                "waterfall" => Some(PoiCategory::Waterfall),
-                _ => None,
-            };
-        }
+    fn check_natural_tags(&self, tags: &HashMap<String, String>) -> Option<PoiCategory> {
+        tags.get("natural").and_then(|n| match n.as_str() {
+            "beach" | "coastline" => Some(PoiCategory::Waterfront),
+            _ => None,
+        })
+    }
 
-        // Check man_made tags
-        if let Some(man_made_type) = tags.get("man_made") {
-            return match man_made_type.as_str() {
-                "tower" => Some(PoiCategory::Tower),
-                "lighthouse" => Some(PoiCategory::Lighthouse),
-                "bridge" => Some(PoiCategory::Bridge),
-                _ => None,
-            };
-        }
+    fn check_waterway_tags(&self, tags: &HashMap<String, String>) -> Option<PoiCategory> {
+        tags.get("waterway").and_then(|w| match w.as_str() {
+            "waterfall" => Some(PoiCategory::Waterfall),
+            _ => None,
+        })
+    }
 
-        // Check craft tags
-        if let Some(craft_type) = tags.get("craft") {
-            return match craft_type.as_str() {
-                "winery" => Some(PoiCategory::Winery),
-                "brewery" => Some(PoiCategory::Brewery),
-                _ => None,
-            };
-        }
+    fn check_man_made_tags(&self, tags: &HashMap<String, String>) -> Option<PoiCategory> {
+        tags.get("man_made").and_then(|m| match m.as_str() {
+            "tower" => Some(PoiCategory::Tower),
+            "lighthouse" => Some(PoiCategory::Lighthouse),
+            "bridge" => Some(PoiCategory::Bridge),
+            _ => None,
+        })
+    }
 
-        // Check building tags (for churches/cathedrals)
-        if let Some(building_type) = tags.get("building") {
-            return match building_type.as_str() {
-                "church" | "cathedral" => Some(PoiCategory::Church),
-                _ => None,
-            };
-        }
+    fn check_craft_tags(&self, tags: &HashMap<String, String>) -> Option<PoiCategory> {
+        tags.get("craft").and_then(|c| match c.as_str() {
+            "winery" => Some(PoiCategory::Winery),
+            "brewery" => Some(PoiCategory::Brewery),
+            _ => None,
+        })
+    }
 
-        // Check place tags (for plazas/squares)
-        if let Some(place_type) = tags.get("place") {
-            return match place_type.as_str() {
-                "square" => Some(PoiCategory::Plaza),
-                _ => None,
-            };
-        }
+    fn check_building_tags(&self, tags: &HashMap<String, String>) -> Option<PoiCategory> {
+        tags.get("building").and_then(|b| match b.as_str() {
+            "church" | "cathedral" => Some(PoiCategory::Church),
+            _ => None,
+        })
+    }
 
-        // Check shop tags
-        if let Some(shop_type) = tags.get("shop") {
-            return match shop_type.as_str() {
-                "wine" => Some(PoiCategory::Winery),
-                "marketplace" => Some(PoiCategory::Market),
-                _ => None,
-            };
-        }
+    fn check_place_tags(&self, tags: &HashMap<String, String>) -> Option<PoiCategory> {
+        tags.get("place").and_then(|p| match p.as_str() {
+            "square" => Some(PoiCategory::Plaza),
+            _ => None,
+        })
+    }
 
-        // Check boundary tags
-        if let Some(boundary_type) = tags.get("boundary") {
-            return match boundary_type.as_str() {
-                "protected_area" => Some(PoiCategory::NatureReserve),
-                _ => None,
-            };
-        }
+    fn check_shop_tags(&self, tags: &HashMap<String, String>) -> Option<PoiCategory> {
+        tags.get("shop").and_then(|s| match s.as_str() {
+            "wine" => Some(PoiCategory::Winery),
+            "marketplace" => Some(PoiCategory::Market),
+            _ => None,
+        })
+    }
 
-        None
+    fn check_boundary_tags(&self, tags: &HashMap<String, String>) -> Option<PoiCategory> {
+        tags.get("boundary").and_then(|b| match b.as_str() {
+            "protected_area" => Some(PoiCategory::NatureReserve),
+            _ => None,
+        })
     }
 
     fn calculate_popularity(&self, tags: &HashMap<String, String>) -> f32 {

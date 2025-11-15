@@ -13,6 +13,17 @@ pub struct RouteGenerator {
     snap_radius_m: f64,
 }
 
+/// Parameters for loop route generation attempt
+struct LoopRouteParams<'a> {
+    start: &'a Coordinates,
+    target_distance_km: f64,
+    distance_tolerance: f64,
+    mode: &'a TransportMode,
+    candidate_pois: &'a [Poi],
+    attempt_seed: usize,
+    preferences: &'a RoutePreferences,
+}
+
 impl RouteGenerator {
     pub fn new(
         mapbox_client: MapboxClient,
@@ -150,18 +161,17 @@ impl RouteGenerator {
         let mut routes = Vec::new();
 
         for attempt in 0..max_alternatives {
-            match self
-                .try_generate_loop(
-                    start,
-                    target_distance_km,
-                    distance_tolerance,
-                    mode,
-                    candidate_pois,
-                    attempt,
-                    preferences,
-                )
-                .await
-            {
+            let params = LoopRouteParams {
+                start,
+                target_distance_km,
+                distance_tolerance,
+                mode,
+                candidate_pois,
+                attempt_seed: attempt,
+                preferences,
+            };
+
+            match self.try_generate_loop(params).await {
                 Ok(route) => routes.push(route),
                 Err(e) => {
                     tracing::debug!(
@@ -228,34 +238,27 @@ impl RouteGenerator {
     }
 
     /// Try to generate a single loop route with selected waypoints
-    #[allow(clippy::too_many_arguments)]
-    async fn try_generate_loop(
-        &self,
-        start: &Coordinates,
-        target_distance_km: f64,
-        distance_tolerance: f64,
-        mode: &TransportMode,
-        candidate_pois: &[Poi],
-        attempt_seed: usize,
-        preferences: &RoutePreferences,
-    ) -> Result<Route> {
-        let min_distance = target_distance_km - distance_tolerance;
-        let max_distance = target_distance_km + distance_tolerance;
+    async fn try_generate_loop(&self, params: LoopRouteParams<'_>) -> Result<Route> {
+        let min_distance = params.target_distance_km - params.distance_tolerance;
+        let max_distance = params.target_distance_km + params.distance_tolerance;
 
         for retry in 0..MAX_ROUTE_GENERATION_RETRIES {
             let adjusted_target =
-                Self::calculate_adjusted_target_distance(target_distance_km, retry);
+                Self::calculate_adjusted_target_distance(params.target_distance_km, retry);
 
             // Select POIs with different variation seed for each retry
             let selected_pois = self.select_loop_waypoints(
-                start,
+                params.start,
                 adjusted_target,
-                candidate_pois,
-                attempt_seed * MAX_ROUTE_GENERATION_RETRIES + retry, // Different seed each time
+                params.candidate_pois,
+                params.attempt_seed * MAX_ROUTE_GENERATION_RETRIES + retry,
             )?;
 
-            let waypoints = Self::build_loop_waypoints(start, &selected_pois);
-            let directions = self.mapbox_client.get_directions(&waypoints, mode).await?;
+            let waypoints = Self::build_loop_waypoints(params.start, &selected_pois);
+            let directions = self
+                .mapbox_client
+                .get_directions(&waypoints, params.mode)
+                .await?;
             let distance_km = directions.distance_km();
 
             // Check if distance is within tolerance
@@ -264,18 +267,19 @@ impl RouteGenerator {
                     "Found valid route on attempt {} ({}km, target: {}km ± {}km)",
                     retry + 1,
                     distance_km,
-                    target_distance_km,
-                    distance_tolerance
+                    params.target_distance_km,
+                    params.distance_tolerance
                 );
                 return self
-                    .build_route(directions, selected_pois, preferences)
+                    .build_route(directions, selected_pois, params.preferences)
                     .await;
             }
 
             // If not within tolerance, log and retry with different POIs
             if retry < MAX_ROUTE_GENERATION_RETRIES - 1 {
-                let error_pct =
-                    (distance_km - target_distance_km).abs() / target_distance_km * 100.0;
+                let error_pct = (distance_km - params.target_distance_km).abs()
+                    / params.target_distance_km
+                    * 100.0;
                 tracing::debug!(
                     "Attempt {} failed: {}km outside tolerance ({}km - {}km), error: {:.1}%",
                     retry + 1,
@@ -290,7 +294,7 @@ impl RouteGenerator {
         // All retries exhausted
         Err(AppError::RouteGeneration(format!(
             "Could not achieve target distance after {} attempts with {} candidate POIs (wanted {}km ± {}km)",
-            MAX_ROUTE_GENERATION_RETRIES, candidate_pois.len(), target_distance_km, distance_tolerance
+            MAX_ROUTE_GENERATION_RETRIES, params.candidate_pois.len(), params.target_distance_km, params.distance_tolerance
         )))
     }
 
@@ -309,102 +313,139 @@ impl RouteGenerator {
             ));
         }
 
-        // Adjust number of waypoints based on available POIs AND target distance
-        // Longer routes need more waypoints to fill the distance
-        let num_waypoints = if (target_distance_km > WAYPOINTS_LONG_ROUTE_DISTANCE_KM
-            && pois.len() >= WAYPOINTS_LONG_ROUTE_MIN_POIS)
-            || (target_distance_km > WAYPOINTS_MEDIUM_ROUTE_DISTANCE_KM
-                && pois.len() >= WAYPOINTS_MEDIUM_ROUTE_MIN_POIS)
-        {
-            WAYPOINTS_COUNT_LONG_ROUTE // Use 3 waypoints for longer routes with enough POIs
-        } else {
-            WAYPOINTS_COUNT_SHORT_ROUTE // Use 2 waypoints for shorter routes or limited POIs
-        };
-
-        // Target distance from start for waypoints
-        // For a loop, we want POIs that are closer to create a reasonable circuit
-        // Rule of thumb: for an N-point loop, each POI should be roughly target_distance / (N + 1.5) away
+        let num_waypoints = self.calculate_waypoint_count(target_distance_km, pois.len());
         let target_waypoint_distance = target_distance_km / (num_waypoints as f64 + 1.5);
 
-        // Score each POI based on distance from ideal waypoint distance
-        // Use a VERY lenient range to handle POI-sparse areas
-        let mut scored_pois: Vec<(f32, &Poi)> = pois
-            .iter()
+        let mut scored_pois = self.score_pois_for_loop(
+            start,
+            pois,
+            target_waypoint_distance,
+            target_distance_km,
+            attempt_seed,
+        );
+
+        // Fallback if we don't have enough POIs after filtering
+        if scored_pois.len() < num_waypoints {
+            scored_pois = self.fallback_score_closest_pois(start, pois, num_waypoints)?;
+        }
+
+        let selected = self.select_top_pois_with_variation(
+            scored_pois,
+            num_waypoints,
+            attempt_seed,
+        );
+
+        // Spatial distribution check (informational only for MVP)
+        if selected.len() >= 2 && !self.are_spatially_distributed(start, &selected) {
+            tracing::debug!("POIs not well distributed, using anyway for MVP");
+        }
+
+        Ok(selected)
+    }
+
+    /// Calculate the optimal number of waypoints based on distance and available POIs
+    fn calculate_waypoint_count(&self, target_distance_km: f64, poi_count: usize) -> usize {
+        if (target_distance_km > WAYPOINTS_LONG_ROUTE_DISTANCE_KM
+            && poi_count >= WAYPOINTS_LONG_ROUTE_MIN_POIS)
+            || (target_distance_km > WAYPOINTS_MEDIUM_ROUTE_DISTANCE_KM
+                && poi_count >= WAYPOINTS_MEDIUM_ROUTE_MIN_POIS)
+        {
+            WAYPOINTS_COUNT_LONG_ROUTE
+        } else {
+            WAYPOINTS_COUNT_SHORT_ROUTE
+        }
+    }
+
+    /// Score POIs based on their suitability for forming a loop
+    fn score_pois_for_loop<'a>(
+        &self,
+        start: &Coordinates,
+        pois: &'a [Poi],
+        target_waypoint_distance: f64,
+        target_distance_km: f64,
+        attempt_seed: usize,
+    ) -> Vec<(f32, &'a Poi)> {
+        let max_reasonable_dist = target_distance_km / MAX_DISTANCE_RATIO;
+
+        pois.iter()
             .enumerate()
             .filter_map(|(idx, poi)| {
                 let dist = start.distance_to(&poi.coordinates);
 
-                // Skip POIs that are way too close (less than 200m)
-                if dist < MIN_POI_DISTANCE_KM {
+                // Filter out POIs that are too close or too far
+                if dist < MIN_POI_DISTANCE_KM || dist > max_reasonable_dist {
                     return None;
                 }
 
-                // Skip POIs that are too far (more than search radius)
-                // Search radius is roughly target_distance / 2
-                let max_reasonable_dist = target_distance_km / MAX_DISTANCE_RATIO;
-                if dist > max_reasonable_dist {
-                    return None;
-                }
-
-                // Score based on how close to ideal distance
-                // But be lenient - any POI in range gets a decent score
-                let distance_score = if dist < target_waypoint_distance {
-                    // POIs closer than ideal still get good scores
-                    (dist / target_waypoint_distance) as f32 * 0.8 + 0.2
-                } else {
-                    // POIs farther than ideal are penalized more gradually
-                    let excess_ratio = (dist - target_waypoint_distance) / target_waypoint_distance;
-                    (1.0 - (excess_ratio * 0.5).min(0.8)) as f32
-                };
-
-                // Add variation offset based on attempt number to get different routes
-                // Use larger offset to ensure different POIs are selected each retry
-                // Variation rotates through different POIs: variation 0-4 each get different POIs
-                let variation_offset = ((idx * VARIATION_MULTIPLIER
-                    + attempt_seed * VARIATION_OFFSET_BASE)
-                    % VARIATION_MOD) as f32
-                    * VARIATION_SCORE_FACTOR;
+                let distance_score = self.calculate_distance_score(dist, target_waypoint_distance);
+                let variation_offset = self.calculate_variation_offset(idx, attempt_seed);
 
                 Some((distance_score + variation_offset, poi))
             })
-            .collect();
+            .collect()
+    }
 
-        if scored_pois.len() < num_waypoints {
-            // If we still don't have enough POIs, relax constraints even more
-            // Just use the closest POIs we have
-            tracing::warn!(
-                "Only {} suitable POIs after filtering (need {}), using all available POIs",
-                scored_pois.len(),
-                num_waypoints
-            );
+    /// Calculate score based on distance from ideal waypoint distance
+    fn calculate_distance_score(&self, actual_dist: f64, target_dist: f64) -> f32 {
+        if actual_dist < target_dist {
+            // POIs closer than ideal still get good scores
+            (actual_dist / target_dist) as f32 * 0.8 + 0.2
+        } else {
+            // POIs farther than ideal are penalized more gradually
+            let excess_ratio = (actual_dist - target_dist) / target_dist;
+            (1.0 - (excess_ratio * 0.5).min(0.8)) as f32
+        }
+    }
 
-            if pois.len() < 2 {
-                return Err(AppError::RouteGeneration(format!(
-                    "Not enough POIs in area (found {}, need at least 2)",
-                    pois.len()
-                )));
-            }
+    /// Calculate variation offset to ensure different POIs are selected on each attempt
+    fn calculate_variation_offset(&self, poi_index: usize, attempt_seed: usize) -> f32 {
+        ((poi_index * VARIATION_MULTIPLIER + attempt_seed * VARIATION_OFFSET_BASE)
+            % VARIATION_MOD) as f32
+            * VARIATION_SCORE_FACTOR
+    }
 
-            // Fallback: use the closest POIs we have, regardless of ideal distance
-            scored_pois = pois
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, poi)| {
-                    let dist = start.distance_to(&poi.coordinates);
-                    if dist < MIN_POI_DISTANCE_KM {
-                        return None; // Still skip very close POIs
-                    }
-                    let score = 1.0 / (dist as f32 + 1.0); // Closer = better
-                    Some((score + (idx as f32 * 0.01), poi))
-                })
-                .collect();
+    /// Fallback strategy: score POIs by proximity when filtering yields too few results
+    fn fallback_score_closest_pois<'a>(
+        &self,
+        start: &Coordinates,
+        pois: &'a [Poi],
+        num_waypoints: usize,
+    ) -> Result<Vec<(f32, &'a Poi)>> {
+        tracing::warn!(
+            "Using fallback scoring - relaxing constraints for {} waypoints",
+            num_waypoints
+        );
+
+        if pois.len() < 2 {
+            return Err(AppError::RouteGeneration(format!(
+                "Not enough POIs in area (found {}, need at least 2)",
+                pois.len()
+            )));
         }
 
-        // Sort by score
+        Ok(pois
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, poi)| {
+                let dist = start.distance_to(&poi.coordinates);
+                if dist < MIN_POI_DISTANCE_KM {
+                    return None;
+                }
+                let score = 1.0 / (dist as f32 + 1.0); // Closer = better
+                Some((score + (idx as f32 * 0.01), poi))
+            })
+            .collect())
+    }
+
+    /// Select top-scoring POIs with variation based on attempt seed
+    fn select_top_pois_with_variation(
+        &self,
+        mut scored_pois: Vec<(f32, &Poi)>,
+        num_waypoints: usize,
+        attempt_seed: usize,
+    ) -> Vec<Poi> {
         scored_pois.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-        // Use attempt_seed to select DIFFERENT POIs each retry
-        // Skip the first (attempt_seed % available_pois) POIs to get different combinations
         let skip_count = if scored_pois.len() > num_waypoints {
             attempt_seed % (scored_pois.len() - num_waypoints + 1)
         } else {
@@ -413,13 +454,13 @@ impl RouteGenerator {
 
         let selected: Vec<Poi> = scored_pois
             .iter()
-            .skip(skip_count) // Skip different POIs based on attempt_seed!
+            .skip(skip_count)
             .take(num_waypoints)
             .map(|(_, poi)| (*poi).clone())
             .collect();
 
         tracing::debug!(
-            "Selected {} POIs (attempt_seed={}, skip={}): {}",
+            "Selected {} POIs (seed={}, skip={}): {}",
             selected.len(),
             attempt_seed,
             skip_count,
@@ -430,12 +471,7 @@ impl RouteGenerator {
                 .join(", ")
         );
 
-        // Ensure spatial distribution by checking angles from start
-        if selected.len() >= 2 && !self.are_spatially_distributed(start, &selected) {
-            tracing::debug!("POIs not well distributed, using anyway for MVP");
-        }
-
-        Ok(selected)
+        selected
     }
 
     /// Check if POIs are spatially distributed (not clustered together)
