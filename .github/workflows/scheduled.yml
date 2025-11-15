@@ -36,11 +36,11 @@ jobs:
         id: cache-audit-scheduled
         with:
           path: ~/.cargo/bin/cargo-audit
-          key: ${{ runner.os }}-cargo-audit-0.18
+          key: ${{ runner.os }}-cargo-audit-latest
 
       - name: Install cargo-audit
         if: steps.cache-audit-scheduled.outputs.cache-hit != 'true'
-        run: cargo install cargo-audit --version 0.18
+        run: cargo install cargo-audit --locked
 
       - name: Run security audit
         id: audit
@@ -77,11 +77,11 @@ jobs:
         id: cache-outdated
         with:
           path: ~/.cargo/bin/cargo-outdated
-          key: ${{ runner.os }}-cargo-outdated-0.14
+          key: ${{ runner.os }}-cargo-outdated-latest
 
       - name: Install cargo-outdated
         if: steps.cache-outdated.outputs.cache-hit != 'true'
-        run: cargo install cargo-outdated --version 0.14
+        run: cargo install cargo-outdated --locked
 
       - name: Check for outdated dependencies
         run: cargo outdated --exit-code 1

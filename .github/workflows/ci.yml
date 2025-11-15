@@ -82,11 +82,11 @@ jobs:
         id: cache-sqlx
         with:
           path: ~/.cargo/bin/sqlx
-          key: ${{ runner.os }}-sqlx-cli-0.7
+          key: ${{ runner.os }}-sqlx-cli-0.7.4
 
       - name: Install sqlx-cli
         if: steps.cache-sqlx.outputs.cache-hit != 'true'
-        run: cargo install sqlx-cli --no-default-features --features postgres --version 0.7
+        run: cargo install sqlx-cli --no-default-features --features postgres --locked
 
       - name: Run database migrations
         run: sqlx migrate run
@@ -160,11 +160,11 @@ jobs:
         id: cache-audit
         with:
           path: ~/.cargo/bin/cargo-audit
-          key: ${{ runner.os }}-cargo-audit-0.18
+          key: ${{ runner.os }}-cargo-audit-latest
 
       - name: Install cargo-audit
         if: steps.cache-audit.outputs.cache-hit != 'true'
-        run: cargo install cargo-audit --version 0.18
+        run: cargo install cargo-audit --locked
 
       - name: Run security audit
         run: cargo audit
@@ -217,11 +217,11 @@ jobs:
         id: cache-sqlx-coverage
         with:
           path: ~/.cargo/bin/sqlx
-          key: ${{ runner.os }}-sqlx-cli-0.7
+          key: ${{ runner.os }}-sqlx-cli-0.7.4
 
       - name: Install sqlx-cli
         if: steps.cache-sqlx-coverage.outputs.cache-hit != 'true'
-        run: cargo install sqlx-cli --no-default-features --features postgres --version 0.7
+        run: cargo install sqlx-cli --no-default-features --features postgres --locked
 
       - name: Run database migrations
         run: sqlx migrate run
@@ -231,11 +231,11 @@ jobs:
         id: cache-tarpaulin
         with:
           path: ~/.cargo/bin/cargo-tarpaulin
-          key: ${{ runner.os }}-tarpaulin-0.27
+          key: ${{ runner.os }}-tarpaulin-latest
 
       - name: Install tarpaulin
         if: steps.cache-tarpaulin.outputs.cache-hit != 'true'
-        run: cargo install cargo-tarpaulin --version 0.27
+        run: cargo install cargo-tarpaulin --locked
 
       - name: Generate code coverage
         run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out xml
