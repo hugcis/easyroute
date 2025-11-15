@@ -128,8 +128,9 @@ echo ""
 
 # Build osm2pgsql command
 # Note: We use slim mode for updates, and output=flex for Lua style
+# We use --append mode to preserve the existing table structure from migrations
 OSM2PGSQL_CMD="osm2pgsql \
-    --create \
+    --append \
     --output=flex \
     --style=$STYLE_FILE \
     --database=$DB_NAME \
@@ -139,7 +140,6 @@ OSM2PGSQL_CMD="osm2pgsql \
     --cache=$OSM2PGSQL_CACHE \
     --number-processes=$OSM2PGSQL_PROCESSES \
     --slim \
-    --drop \
     $PBF_FILE"
 
 # Check if osm2pgsql is available
@@ -163,7 +163,7 @@ else
         -v "$ABS_STYLE_FILE:/style.lua:ro" \
         -e PGPASSWORD="$DB_PASSWORD" \
         ghcr.io/openstreetmap/osm2pgsql:latest \
-        --create \
+        --append \
         --output=flex \
         --style=/style.lua \
         --database="$DB_NAME" \
@@ -173,7 +173,6 @@ else
         --cache="$OSM2PGSQL_CACHE" \
         --number-processes="$OSM2PGSQL_PROCESSES" \
         --slim \
-        --drop \
         /data/input.osm.pbf
 fi
 
