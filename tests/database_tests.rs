@@ -1,9 +1,11 @@
 use easyroute::db::queries;
 use easyroute::models::{Coordinates, PoiCategory};
+use serial_test::serial;
 
 mod common;
 
 #[tokio::test]
+#[serial]
 async fn test_insert_and_find_pois() {
     let pool = common::setup_test_db().await;
     common::cleanup_test_db(&pool).await;
@@ -54,6 +56,7 @@ async fn test_insert_and_find_pois() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_find_pois_by_category() {
     let pool = common::setup_test_db().await;
     common::cleanup_test_db(&pool).await;
@@ -99,6 +102,7 @@ async fn test_find_pois_by_category() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_spatial_distance_ordering() {
     let pool = common::setup_test_db().await;
     common::cleanup_test_db(&pool).await;
@@ -132,6 +136,7 @@ async fn test_spatial_distance_ordering() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_duplicate_osm_id_handling() {
     let pool = common::setup_test_db().await;
     common::cleanup_test_db(&pool).await;

@@ -3,10 +3,12 @@ use easyroute::services::mapbox::MapboxClient;
 use easyroute::services::poi_service::PoiService;
 use easyroute::services::route_generator::RouteGenerator;
 use easyroute::services::snapping_service::SnappingService;
+use serial_test::serial;
 
 mod common;
 
 #[tokio::test]
+#[serial]
 async fn test_route_generation_with_database_pois() {
     if common::should_skip_real_api_tests() {
         println!("Skipping real API test");
@@ -79,6 +81,7 @@ async fn test_route_generation_with_database_pois() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_route_generation_distance_validation() {
     if common::should_skip_real_api_tests() {
         println!("Skipping real API test");
@@ -138,6 +141,7 @@ async fn test_route_generation_distance_validation() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_route_poi_ordering() {
     if common::should_skip_real_api_tests() {
         println!("Skipping real API test");
@@ -199,6 +203,7 @@ async fn test_route_poi_ordering() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_route_scoring_different_preferences() {
     if common::should_skip_real_api_tests() {
         println!("Skipping real API test");
