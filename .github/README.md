@@ -96,12 +96,26 @@ Add these badges to your main README.md:
 
 ## Caching Strategy
 
-All workflows use GitHub Actions caching to speed up builds:
-- Cargo registry cache
-- Cargo git dependencies cache
-- Build target cache
+All workflows use optimized Rust caching via `Swatinem/rust-cache@v2`:
+- **Automatic caching** of Cargo registry, git dependencies, and build artifacts
+- **Incremental compilation** artifacts preserved between runs
+- **Shared caches** across jobs with different `shared-key` values
+- **Smart invalidation** based on Cargo.lock and toolchain changes
+- **Compression** optimized for Rust projects
 
-Cache keys are based on `Cargo.lock` hash, so updates to dependencies will invalidate the cache appropriately.
+Benefits over manual caching:
+- 3-5x faster cache restoration
+- Automatic cleanup of outdated cache entries
+- Handles all Rust-specific cache directories
+- Works seamlessly with workspace projects
+
+Cache keys used:
+- `test` - Main test suite
+- `check` - Cargo check job
+- `coverage` - Code coverage job
+- `pr-quick` - PR quick checks
+- `pr-test` - PR test suite
+- `audit` - Security audit
 
 ## Environment Variables
 
