@@ -62,6 +62,22 @@ cargo fmt
 cargo clippy
 ```
 
+### OSM Data Import (Recommended for Production)
+```bash
+# Quick test with Monaco (~2MB, ~500 POIs)
+./osm/download_osm.sh monaco
+./osm/import_osm.sh ./osm/data/monaco-latest.osm.pbf
+
+# Production: Import France region (~3.8GB, ~800k POIs)
+./osm/download_osm.sh europe/france
+./osm/import_osm.sh ./osm/data/france-latest.osm.pbf
+
+# Weekly updates (automated with cron)
+./osm/update_osm.sh france
+
+# See osm/QUICKSTART.md for detailed instructions
+```
+
 ## Core Architecture
 
 ### Technology Stack
@@ -75,8 +91,9 @@ cargo clippy
 1. **Mapbox Directions API**: Generates turn-by-turn routes between waypoints
    - Free tier: 100,000 requests/month
    - Profiles: `walking` and `cycling`
-2. **Overpass API (OpenStreetMap)**: Queries POI data
-   - Free, but requires aggressive caching
+2. **OpenStreetMap Data**: POI source
+   - **Recommended**: Local OSM import via `osm2pgsql` (eliminates API timeouts)
+   - **Fallback**: Overpass API (free but has timeout issues in dense areas)
 
 ### High-Level Request Flow
 
@@ -108,14 +125,15 @@ The heart of the application. Implements the waypoint selection algorithm:
 **Critical**: The algorithm must balance distance accuracy, POI quality, and spatial distribution.
 
 ### POI Service (`src/services/poi_service.rs`)
-Manages POI data with aggressive caching:
-- Query POIs within radius using PostGIS spatial indexes
+Manages POI data with two-tier architecture:
+- **Primary**: PostgreSQL/PostGIS database with OSM-imported POIs
+  - Instant queries using spatial indexes
+  - No API timeouts or rate limits
+  - Weekly updates from Geofabrik OSM extracts
+- **Fallback**: Overpass API (only used if database is empty)
 - Filter by category and preferences
-- Calculate popularity scores
-- **Cache Strategy**:
-  - Redis for region data (7 day TTL)
-  - PostgreSQL for permanent storage
-  - Reduces Overpass API calls by 80-90%
+- Calculate popularity scores (based on OSM tags: Wikipedia, UNESCO heritage, etc.)
+- **Import System**: See `osm/` directory for import scripts and documentation
 
 ### API Layer (`src/routes/`)
 Three main endpoint groups:

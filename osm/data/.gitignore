@@ -1,0 +1,17 @@
+# Ignore all OSM data files (they're large!)
+*.osm
+*.osm.pbf
+*.osm.bz2
+*.osm.gz
+*.osc
+*.osc.gz
+*.md5
+
+# Ignore state files (these are auto-downloaded)
+*.state.txt
+
+# Ignore update directories
+*-updates/
+
+# Keep this directory in git
+!.gitignore

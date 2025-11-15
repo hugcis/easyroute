@@ -1,0 +1,378 @@
+-- osm2pgsql Lua style for extracting POIs into easyroute database
+-- This script processes OSM nodes and ways, extracting tourism/historic/amenity POIs
+-- and inserting them into the existing 'pois' table with proper category mapping
+
+-- Define the output table (matches our existing pois schema)
+local pois_table = osm2pgsql.define_table({
+    name = 'pois',
+    ids = { type = 'any', id_column = 'osm_id' },
+    columns = {
+        { column = 'name', type = 'text', not_null = true },
+        { column = 'category', type = 'text', not_null = true },
+        { column = 'location', type = 'geometry', projection = 4326, not_null = true },
+        { column = 'popularity_score', type = 'real' },
+        { column = 'description', type = 'text' },
+        { column = 'estimated_visit_duration_minutes', type = 'int' },
+        { column = 'metadata', type = 'jsonb' },
+    }
+})
+
+-- Category mapping: OSM tags -> our PoiCategory enum
+local category_mappings = {
+    -- Tourism tags
+    monument = 'monument',
+    viewpoint = 'viewpoint',
+    museum = 'museum',
+    attraction = 'cultural',
+    artwork = 'artwork',
+
+    -- Historic tags
+    castle = 'castle',
+    manor = 'castle',
+    fort = 'castle',
+    ruins = 'historic',
+    archaeological_site = 'historic',
+    memorial = 'monument',
+
+    -- Natural/Scenic
+    waterfall = 'waterfall',
+    beach = 'waterfront',
+
+    -- Religious/Architectural
+    place_of_worship = 'church',  -- Will be refined based on religion tag
+    church = 'church',
+    cathedral = 'church',
+    chapel = 'church',
+
+    -- Urban features
+    fountain = 'fountain',
+    marketplace = 'market',
+    square = 'plaza',
+
+    -- Activity
+    theatre = 'theatre',
+    cinema = 'theatre',
+    library = 'library',
+
+    -- Man-made
+    lighthouse = 'lighthouse',
+    tower = 'tower',
+    observation = 'viewpoint',
+}
+
+-- Calculate popularity score based on OSM tags
+local function calculate_popularity(tags)
+    local score = 50  -- Base score
+
+    -- Wikipedia presence is a strong indicator of importance
+    if tags.wikipedia or tags.wikidata then
+        score = score + 20
+    end
+
+    -- UNESCO World Heritage
+    if tags['heritage:unesco'] or tags.heritage == 'yes' then
+        score = score + 15
+    end
+
+    -- Tourist importance
+    if tags.tourist == 'yes' or tags.tourism == 'attraction' then
+        score = score + 10
+    end
+
+    -- Multiple language names indicate international importance
+    local lang_count = 0
+    for key, _ in pairs(tags) do
+        if key:match('^name:') then
+            lang_count = lang_count + 1
+        end
+    end
+    if lang_count > 3 then
+        score = score + 10
+    elseif lang_count > 1 then
+        score = score + 5
+    end
+
+    -- Has website
+    if tags.website or tags['contact:website'] then
+        score = score + 5
+    end
+
+    -- Has opening hours (indicates it's a real destination)
+    if tags.opening_hours then
+        score = score + 5
+    end
+
+    -- Star rating for tourism
+    if tags.stars then
+        local stars = tonumber(tags.stars)
+        if stars then
+            score = score + (stars * 2)
+        end
+    end
+
+    -- Historic importance
+    if tags.historic == 'monument' or tags.historic == 'castle' then
+        score = score + 10
+    end
+
+    -- Hidden gems (for users who want less popular places)
+    -- If it has very few tags and no wikipedia, reduce score
+    local tag_count = 0
+    for _ in pairs(tags) do tag_count = tag_count + 1 end
+    if tag_count < 5 and not tags.wikipedia then
+        score = score - 10
+    end
+
+    -- Clamp to 0-100
+    if score > 100 then score = 100 end
+    if score < 0 then score = 0 end
+
+    return score
+end
+
+-- Estimate visit duration based on POI type
+local function estimate_duration(tags, category)
+    if tags.duration then
+        -- Some POIs have explicit duration tags
+        local minutes = tonumber(tags.duration)
+        if minutes then return minutes end
+    end
+
+    -- Default estimates by category
+    local defaults = {
+        museum = 90,
+        castle = 120,
+        monument = 30,
+        viewpoint = 20,
+        park = 60,
+        church = 30,
+        theatre = 180,
+        library = 45,
+        cultural = 60,
+        waterfall = 30,
+        market = 45,
+    }
+
+    return defaults[category] or 30
+end
+
+-- Build description from OSM tags
+local function build_description(tags)
+    local parts = {}
+
+    if tags.description then
+        table.insert(parts, tags.description)
+    end
+
+    if tags['heritage:unesco'] then
+        table.insert(parts, 'UNESCO World Heritage Site')
+    end
+
+    if tags.architect then
+        table.insert(parts, 'Architect: ' .. tags.architect)
+    end
+
+    if tags.artist then
+        table.insert(parts, 'Artist: ' .. tags.artist)
+    end
+
+    if tags.ele then
+        table.insert(parts, 'Elevation: ' .. tags.ele .. 'm')
+    end
+
+    if #parts > 0 then
+        return table.concat(parts, '. ')
+    end
+
+    return nil
+end
+
+-- Determine category from OSM tags
+local function determine_category(tags)
+    -- Priority order: tourism > historic > amenity > man_made > natural > leisure
+
+    -- Tourism tags (highest priority for our use case)
+    if tags.tourism then
+        local cat = category_mappings[tags.tourism]
+        if cat then return cat end
+    end
+
+    -- Historic tags
+    if tags.historic then
+        local cat = category_mappings[tags.historic]
+        if cat then return cat end
+    end
+
+    -- Amenity tags
+    if tags.amenity then
+        local cat = category_mappings[tags.amenity]
+        if cat then
+            -- Special case: refine church category
+            if cat == 'church' and tags.religion ~= 'christian' then
+                return 'cultural'  -- Non-Christian places of worship -> cultural
+            end
+            return cat
+        end
+
+        -- Additional amenity mappings
+        if tags.amenity == 'theatre' or tags.amenity == 'cinema' then
+            return 'theatre'
+        elseif tags.amenity == 'library' then
+            return 'library'
+        elseif tags.amenity == 'fountain' then
+            return 'fountain'
+        elseif tags.amenity == 'marketplace' then
+            return 'market'
+        end
+    end
+
+    -- Leisure tags
+    if tags.leisure then
+        if tags.leisure == 'park' or tags.leisure == 'garden' then
+            return 'park'
+        elseif tags.leisure == 'nature_reserve' then
+            return 'nature_reserve'
+        end
+    end
+
+    -- Natural features
+    if tags.natural then
+        if tags.natural == 'waterfall' then
+            return 'waterfall'
+        elseif tags.natural == 'beach' then
+            return 'waterfront'
+        elseif tags.natural == 'water' then
+            return 'waterfront'
+        end
+    end
+
+    -- Man-made features
+    if tags.man_made then
+        if tags.man_made == 'lighthouse' then
+            return 'lighthouse'
+        elseif tags.man_made == 'tower' and tags['tower:type'] == 'observation' then
+            return 'viewpoint'
+        elseif tags.man_made == 'tower' then
+            return 'tower'
+        end
+    end
+
+    -- Craft/industry
+    if tags.craft == 'winery' or tags.craft == 'brewery' then
+        return tags.craft == 'winery' and 'winery' or 'brewery'
+    end
+
+    -- Building types
+    if tags.building then
+        if tags.building == 'church' or tags.building == 'cathedral' or tags.building == 'chapel' then
+            return 'church'
+        elseif tags.building == 'castle' then
+            return 'castle'
+        end
+    end
+
+    -- Place types
+    if tags.place == 'square' then
+        return 'plaza'
+    end
+
+    return nil  -- Not a POI we're interested in
+end
+
+-- Extract metadata as JSONB
+local function extract_metadata(tags)
+    local metadata = {}
+
+    -- Useful tags to preserve
+    if tags.wikipedia then metadata.wikipedia = tags.wikipedia end
+    if tags.wikidata then metadata.wikidata = tags.wikidata end
+    if tags.website then metadata.website = tags.website end
+    if tags['contact:website'] then metadata.website = tags['contact:website'] end
+    if tags.opening_hours then metadata.opening_hours = tags.opening_hours end
+    if tags.phone then metadata.phone = tags.phone end
+    if tags['contact:phone'] then metadata.phone = tags['contact:phone'] end
+    if tags.heritage then metadata.heritage = tags.heritage end
+    if tags.architect then metadata.architect = tags.architect end
+    if tags.artist then metadata.artist = tags.artist end
+    if tags.start_date then metadata.start_date = tags.start_date end
+    if tags.ele then metadata.elevation = tags.ele end
+
+    if next(metadata) == nil then
+        return nil
+    end
+
+    return metadata
+end
+
+-- Process nodes (most POIs are nodes)
+function osm2pgsql.process_node(object)
+    -- Must have a name (we don't want unnamed POIs)
+    if not object.tags.name then
+        return
+    end
+
+    -- Determine category
+    local category = determine_category(object.tags)
+    if not category then
+        return  -- Not a POI we care about
+    end
+
+    -- Calculate attributes
+    local popularity = calculate_popularity(object.tags)
+    local description = build_description(object.tags)
+    local duration = estimate_duration(object.tags, category)
+    local metadata = extract_metadata(object.tags)
+
+    -- Insert into pois table
+    pois_table:insert({
+        name = object.tags.name,
+        category = category,
+        location = object:as_point(),
+        popularity_score = popularity,
+        description = description,
+        estimated_visit_duration_minutes = duration,
+        metadata = metadata,
+    })
+end
+
+-- Process ways (some POIs are areas, like parks, plazas)
+function osm2pgsql.process_way(object)
+    -- Must have a name
+    if not object.tags.name then
+        return
+    end
+
+    -- Determine category
+    local category = determine_category(object.tags)
+    if not category then
+        return
+    end
+
+    -- For ways, use centroid as the POI location
+    -- This works well for parks, plazas, buildings, etc.
+    if not object.is_closed then
+        return  -- Only process closed ways (areas)
+    end
+
+    -- Calculate attributes
+    local popularity = calculate_popularity(object.tags)
+    local description = build_description(object.tags)
+    local duration = estimate_duration(object.tags, category)
+    local metadata = extract_metadata(object.tags)
+
+    -- Insert into pois table using centroid
+    pois_table:insert({
+        name = object.tags.name,
+        category = category,
+        location = object:as_polygon():centroid(),
+        popularity_score = popularity,
+        description = description,
+        estimated_visit_duration_minutes = duration,
+        metadata = metadata,
+    })
+end
+
+-- We don't process relations for POIs (too complex, rare)
+function osm2pgsql.process_relation(object)
+    -- Skip relations for now
+end
