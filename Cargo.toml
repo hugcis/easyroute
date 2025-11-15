@@ -34,7 +34,7 @@ redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 # Utilities
 uuid = { version = "1", features = ["serde", "v4"] }
 dotenv = "0.15"
-thiserror = "1"
+thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 time = { version = "0.3", features = ["serde"] }
