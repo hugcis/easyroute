@@ -71,9 +71,9 @@ impl PoiService {
         // Strategy: Progressive radius reduction on timeout
         // Try with full radius, then 75%, then 50% if queries keep timing out
         let radius_attempts = vec![
-            (radius_meters, false),        // Full radius, single query
-            (radius_meters * 0.75, true),  // 75% radius, batched
-            (radius_meters * 0.5, true),   // 50% radius, batched
+            (radius_meters, false),       // Full radius, single query
+            (radius_meters * 0.75, true), // 75% radius, batched
+            (radius_meters * 0.5, true),  // 50% radius, batched
         ];
 
         let mut last_error = None;
