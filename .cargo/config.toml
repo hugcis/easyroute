@@ -1,0 +1,6 @@
+# Cargo configuration for EasyRoute
+# To use SQLx offline mode (compile without database):
+# 1. Run `cargo sqlx prepare` with database running
+# 2. Uncomment the line below:
+# [env]
+# SQLX_OFFLINE = "true"
