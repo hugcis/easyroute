@@ -72,10 +72,12 @@ impl OverpassClient {
         categories: &[PoiCategory],
         use_batching: bool,
     ) -> Result<Vec<Poi>> {
-        if use_batching && categories.len() > 3 {
+        // Always use batching for complex queries (>6 categories) or when explicitly requested
+        if categories.len() > 6 || (use_batching && categories.len() > 3) {
             tracing::info!(
-                "Using batched parallel queries for {} categories",
-                categories.len()
+                "Using batched parallel queries for {} categories (auto-batching: {})",
+                categories.len(),
+                categories.len() > 6
             );
             return self
                 .query_pois_batched_parallel(center, radius_meters, categories)
@@ -371,7 +373,11 @@ impl OverpassClient {
         radius_meters: f64,
         categories: &[PoiCategory],
     ) -> String {
-        let mut query_parts = vec!["[out:json];(".to_string()];
+        // Add optimization hints: timeout and maxsize to prevent runaway queries
+        let mut query_parts = vec![format!(
+            "[out:json][timeout:{}][maxsize:536870912];(",
+            OVERPASS_QUERY_TIMEOUT_SECONDS
+        )];
 
         for category in categories {
             let osm_tags = category_to_osm_tags(category);
@@ -391,7 +397,7 @@ impl OverpassClient {
             }
         }
 
-        query_parts.push(");out geom;".to_string());
+        query_parts.push(");out center;".to_string());
         query_parts.join("\n")
     }
 
@@ -730,9 +736,12 @@ mod tests {
         let query = client.build_query(&center, 1000.0, &[PoiCategory::Monument]);
 
         assert!(query.contains("[out:json]"));
+        assert!(query.contains("[timeout:"));
+        assert!(query.contains("[maxsize:"));
         assert!(query.contains("around:1000"));
         assert!(query.contains("48.8566"));
         assert!(query.contains("2.3522"));
+        assert!(query.contains("out center"));
         // Verify correct Overpass syntax for tag values
         assert!(
             query.contains(r#"["tourism"="monument"]"#)
