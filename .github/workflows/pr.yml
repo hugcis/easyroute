@@ -29,7 +29,8 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "pr-quick"
+          shared-key: "ci-test"  # Same as main CI for cache sharing
+          save-if: false  # PRs only restore, don't save
           cache-on-failure: true
 
       - name: Check formatting
@@ -81,7 +82,8 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "pr-test"
+          shared-key: "ci-test"  # Same as main CI for cache sharing
+          save-if: false  # PRs only restore, don't save
           cache-on-failure: true
 
       - name: Cache sqlx-cli
