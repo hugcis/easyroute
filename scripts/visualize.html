@@ -410,7 +410,7 @@
             }
 
             // Determine API endpoint
-            const endpoint = routeType === 'loop' ? '/routes/loop' : '/routes/point-to-point';
+            const endpoint = routeType === 'loop' ? '/api/v1/routes/loop' : '/api/v1/routes/point-to-point';
             const url = `${apiEndpoint}${endpoint}`;
 
             console.log('Calling API:', url, requestBody);
