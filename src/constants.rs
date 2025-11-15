@@ -1,5 +1,5 @@
-/// Application-wide constants
-/// This module centralizes all magic numbers and hardcoded values for better maintainability
+// Application-wide constants
+// This module centralizes all magic numbers and hardcoded values for better maintainability
 
 // Server defaults
 pub const DEFAULT_HOST: &str = "0.0.0.0";
