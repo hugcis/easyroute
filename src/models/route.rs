@@ -1,10 +1,13 @@
 use crate::models::{Coordinates, Poi, PoiCategory};
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::str::FromStr;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TransportMode {
+    #[default]
     Walk,
     Bike,
 }
@@ -15,6 +18,27 @@ impl TransportMode {
         match self {
             TransportMode::Walk => "walking",
             TransportMode::Bike => "cycling",
+        }
+    }
+}
+
+impl fmt::Display for TransportMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TransportMode::Walk => write!(f, "walk"),
+            TransportMode::Bike => write!(f, "bike"),
+        }
+    }
+}
+
+impl FromStr for TransportMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "walk" | "walking" => Ok(TransportMode::Walk),
+            "bike" | "cycling" | "bicycle" => Ok(TransportMode::Bike),
+            _ => Err(format!("Invalid transport mode: '{}'", s)),
         }
     }
 }
@@ -38,7 +62,7 @@ impl Default for RoutePreferences {
         RoutePreferences {
             poi_categories: None,
             hidden_gems: false,
-            max_alternatives: 3,
+            max_alternatives: default_max_alternatives(),
         }
     }
 }
@@ -195,5 +219,45 @@ mod tests {
     fn test_transport_mode_mapbox_profile() {
         assert_eq!(TransportMode::Walk.mapbox_profile(), "walking");
         assert_eq!(TransportMode::Bike.mapbox_profile(), "cycling");
+    }
+
+    #[test]
+    fn test_transport_mode_display() {
+        assert_eq!(TransportMode::Walk.to_string(), "walk");
+        assert_eq!(TransportMode::Bike.to_string(), "bike");
+    }
+
+    #[test]
+    fn test_transport_mode_from_str() {
+        assert_eq!(
+            "walk".parse::<TransportMode>().unwrap(),
+            TransportMode::Walk
+        );
+        assert_eq!(
+            "WALK".parse::<TransportMode>().unwrap(),
+            TransportMode::Walk
+        );
+        assert_eq!(
+            "walking".parse::<TransportMode>().unwrap(),
+            TransportMode::Walk
+        );
+        assert_eq!(
+            "bike".parse::<TransportMode>().unwrap(),
+            TransportMode::Bike
+        );
+        assert_eq!(
+            "cycling".parse::<TransportMode>().unwrap(),
+            TransportMode::Bike
+        );
+        assert_eq!(
+            "bicycle".parse::<TransportMode>().unwrap(),
+            TransportMode::Bike
+        );
+        assert!("invalid".parse::<TransportMode>().is_err());
+    }
+
+    #[test]
+    fn test_transport_mode_default() {
+        assert_eq!(TransportMode::default(), TransportMode::Walk);
     }
 }

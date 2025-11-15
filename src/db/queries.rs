@@ -13,71 +13,92 @@ pub async fn find_pois_within_radius(
 ) -> Result<Vec<Poi>, sqlx::Error> {
     let point_wkt = format!("POINT({} {})", center.lng, center.lat);
 
-    let query = if let Some(cats) = categories {
+    let rows = if let Some(cats) = categories {
         let category_strs: Vec<String> = cats.iter().map(|c| c.to_string()).collect();
-
-        sqlx::query_as::<_, PoiRow>(
-            r#"
-            SELECT
-                id,
-                name,
-                category,
-                ST_Y(location::geometry) as lat,
-                ST_X(location::geometry) as lng,
-                popularity_score,
-                description,
-                estimated_visit_duration_minutes,
-                osm_id,
-                ST_Distance(location, ST_GeogFromText($1)) as distance_meters
-            FROM pois
-            WHERE ST_DWithin(
-                location,
-                ST_GeogFromText($1),
-                $2
-            )
-            AND category = ANY($3)
-            ORDER BY distance_meters
-            LIMIT $4
-            "#,
-        )
-        .bind(&point_wkt)
-        .bind(radius_meters)
-        .bind(&category_strs)
-        .bind(limit)
-        .fetch_all(pool)
-        .await?
+        execute_radius_query_with_categories(pool, &point_wkt, radius_meters, &category_strs, limit)
+            .await?
     } else {
-        sqlx::query_as::<_, PoiRow>(
-            r#"
-            SELECT
-                id,
-                name,
-                category,
-                ST_Y(location::geometry) as lat,
-                ST_X(location::geometry) as lng,
-                popularity_score,
-                description,
-                estimated_visit_duration_minutes,
-                osm_id,
-                ST_Distance(location, ST_GeogFromText($1)) as distance_meters
-            FROM pois
-            WHERE ST_DWithin(
-                location,
-                ST_GeogFromText($1),
-                $2
-            )
-            ORDER BY distance_meters
-            LIMIT $3
-            "#,
-        )
-        .bind(&point_wkt)
-        .bind(radius_meters)
-        .bind(limit)
-        .fetch_all(pool)
-        .await?
+        execute_radius_query_without_categories(pool, &point_wkt, radius_meters, limit).await?
     };
 
-    Ok(query.into_iter().map(|row| row.into()).collect())
+    Ok(rows.into_iter().map(|row| row.into()).collect())
+}
+
+/// Execute radius query with category filtering
+async fn execute_radius_query_with_categories(
+    pool: &PgPool,
+    point_wkt: &str,
+    radius_meters: f64,
+    category_strs: &[String],
+    limit: i64,
+) -> Result<Vec<PoiRow>, sqlx::Error> {
+    sqlx::query_as::<_, PoiRow>(
+        r#"
+        SELECT
+            id,
+            name,
+            category,
+            ST_Y(location::geometry) as lat,
+            ST_X(location::geometry) as lng,
+            popularity_score,
+            description,
+            estimated_visit_duration_minutes,
+            osm_id,
+            ST_Distance(location, ST_GeogFromText($1)) as distance_meters
+        FROM pois
+        WHERE ST_DWithin(
+            location,
+            ST_GeogFromText($1),
+            $2
+        )
+        AND category = ANY($3)
+        ORDER BY distance_meters
+        LIMIT $4
+        "#,
+    )
+    .bind(point_wkt)
+    .bind(radius_meters)
+    .bind(category_strs)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
+/// Execute radius query without category filtering
+async fn execute_radius_query_without_categories(
+    pool: &PgPool,
+    point_wkt: &str,
+    radius_meters: f64,
+    limit: i64,
+) -> Result<Vec<PoiRow>, sqlx::Error> {
+    sqlx::query_as::<_, PoiRow>(
+        r#"
+        SELECT
+            id,
+            name,
+            category,
+            ST_Y(location::geometry) as lat,
+            ST_X(location::geometry) as lng,
+            popularity_score,
+            description,
+            estimated_visit_duration_minutes,
+            osm_id,
+            ST_Distance(location, ST_GeogFromText($1)) as distance_meters
+        FROM pois
+        WHERE ST_DWithin(
+            location,
+            ST_GeogFromText($1),
+            $2
+        )
+        ORDER BY distance_meters
+        LIMIT $3
+        "#,
+    )
+    .bind(point_wkt)
+    .bind(radius_meters)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
 }
 
 /// Find POIs within a bounding box
@@ -91,67 +112,101 @@ pub async fn find_pois_in_bbox(
     categories: Option<&[PoiCategory]>,
     limit: i64,
 ) -> Result<Vec<Poi>, sqlx::Error> {
-    let query = if let Some(cats) = categories {
+    let rows = if let Some(cats) = categories {
         let category_strs: Vec<String> = cats.iter().map(|c| c.to_string()).collect();
-
-        sqlx::query_as::<_, PoiRow>(
-            r#"
-            SELECT
-                id,
-                name,
-                category,
-                ST_Y(location::geometry) as lat,
-                ST_X(location::geometry) as lng,
-                popularity_score,
-                description,
-                estimated_visit_duration_minutes,
-                osm_id,
-                NULL::float8 as distance_meters
-            FROM pois
-            WHERE ST_Y(location::geometry) BETWEEN $1 AND $2
-            AND ST_X(location::geometry) BETWEEN $3 AND $4
-            AND category = ANY($5)
-            LIMIT $6
-            "#,
+        execute_bbox_query_with_categories(
+            pool,
+            min_lat,
+            max_lat,
+            min_lng,
+            max_lng,
+            &category_strs,
+            limit,
         )
-        .bind(min_lat)
-        .bind(max_lat)
-        .bind(min_lng)
-        .bind(max_lng)
-        .bind(&category_strs)
-        .bind(limit)
-        .fetch_all(pool)
         .await?
     } else {
-        sqlx::query_as::<_, PoiRow>(
-            r#"
-            SELECT
-                id,
-                name,
-                category,
-                ST_Y(location::geometry) as lat,
-                ST_X(location::geometry) as lng,
-                popularity_score,
-                description,
-                estimated_visit_duration_minutes,
-                osm_id,
-                NULL::float8 as distance_meters
-            FROM pois
-            WHERE ST_Y(location::geometry) BETWEEN $1 AND $2
-            AND ST_X(location::geometry) BETWEEN $3 AND $4
-            LIMIT $5
-            "#,
-        )
-        .bind(min_lat)
-        .bind(max_lat)
-        .bind(min_lng)
-        .bind(max_lng)
-        .bind(limit)
-        .fetch_all(pool)
-        .await?
+        execute_bbox_query_without_categories(pool, min_lat, max_lat, min_lng, max_lng, limit)
+            .await?
     };
 
-    Ok(query.into_iter().map(|row| row.into()).collect())
+    Ok(rows.into_iter().map(|row| row.into()).collect())
+}
+
+/// Execute bbox query with category filtering
+async fn execute_bbox_query_with_categories(
+    pool: &PgPool,
+    min_lat: f64,
+    max_lat: f64,
+    min_lng: f64,
+    max_lng: f64,
+    category_strs: &[String],
+    limit: i64,
+) -> Result<Vec<PoiRow>, sqlx::Error> {
+    sqlx::query_as::<_, PoiRow>(
+        r#"
+        SELECT
+            id,
+            name,
+            category,
+            ST_Y(location::geometry) as lat,
+            ST_X(location::geometry) as lng,
+            popularity_score,
+            description,
+            estimated_visit_duration_minutes,
+            osm_id,
+            NULL::float8 as distance_meters
+        FROM pois
+        WHERE ST_Y(location::geometry) BETWEEN $1 AND $2
+        AND ST_X(location::geometry) BETWEEN $3 AND $4
+        AND category = ANY($5)
+        LIMIT $6
+        "#,
+    )
+    .bind(min_lat)
+    .bind(max_lat)
+    .bind(min_lng)
+    .bind(max_lng)
+    .bind(category_strs)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
+/// Execute bbox query without category filtering
+async fn execute_bbox_query_without_categories(
+    pool: &PgPool,
+    min_lat: f64,
+    max_lat: f64,
+    min_lng: f64,
+    max_lng: f64,
+    limit: i64,
+) -> Result<Vec<PoiRow>, sqlx::Error> {
+    sqlx::query_as::<_, PoiRow>(
+        r#"
+        SELECT
+            id,
+            name,
+            category,
+            ST_Y(location::geometry) as lat,
+            ST_X(location::geometry) as lng,
+            popularity_score,
+            description,
+            estimated_visit_duration_minutes,
+            osm_id,
+            NULL::float8 as distance_meters
+        FROM pois
+        WHERE ST_Y(location::geometry) BETWEEN $1 AND $2
+        AND ST_X(location::geometry) BETWEEN $3 AND $4
+        LIMIT $5
+        "#,
+    )
+    .bind(min_lat)
+    .bind(max_lat)
+    .bind(min_lng)
+    .bind(max_lng)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
 }
 
 /// Insert a POI into the database
