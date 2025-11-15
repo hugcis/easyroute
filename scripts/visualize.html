@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>EasyRoute Visualizer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src='https://api.mapbox.com/mapbox-gl-js/v3.0.0/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v3.0.0/mapbox-gl.css' rel='stylesheet' />
+    <style>
+        body { margin: 0; padding: 0; font-family: sans-serif; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+
+        .controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            max-width: 300px;
+            z-index: 1;
+        }
+
+        .api-input {
+            width: 100%;
+            min-height: 100px;
+            margin: 10px 0;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        button {
+            background: #4264fb;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 3px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background: #3451cc;
+        }
+
+        .route-info {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+            font-size: 13px;
+        }
+
+        .route-item {
+            padding: 8px;
+            margin: 5px 0;
+            background: #f5f5f5;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
+        .route-item:hover {
+            background: #e5e5e5;
+        }
+
+        .route-item.selected {
+            background: #4264fb;
+            color: white;
+        }
+
+        .poi-marker {
+            background-color: #4264fb;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 2px solid white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .snapped-poi-marker {
+            background-color: #ff9500;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .start-marker {
+            background-color: #00D084;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="controls">
+    <h3 style="margin-top: 0;">EasyRoute Visualizer</h3>
+    <p style="font-size: 12px; color: #666;">Paste API response JSON below:</p>
+    <textarea class="api-input" id="apiResponse" placeholder='{"routes": [...]}'></textarea>
+    <button onclick="visualizeRoutes()">Visualize Routes</button>
+    <div id="routeInfo" class="route-info" style="display: none;"></div>
+</div>
+
+<script>
+    // Initialize map - REPLACE 'YOUR_MAPBOX_TOKEN' with your actual token
+    mapboxgl.accessToken = 'pk.eyJ1IjoiaHVnY2lzIiwiYSI6ImNsZ2Znd3Y5NDAxbTUzb3QxMDg4ZWlkY24ifQ.nQ6tVINow8RIuaiPkTReBQ';
+
+    const map = new mapboxgl.Map({
+        container: 'map',
+        style: 'mapbox://styles/mapbox/streets-v12',
+        center: [2.3522, 48.8566], // Paris default
+        zoom: 12
+    });
+
+    map.addControl(new mapboxgl.NavigationControl());
+
+    let currentMarkers = [];
+    let currentRoutes = null;
+    let selectedRouteIndex = 0;
+
+    function visualizeRoutes() {
+        const input = document.getElementById('apiResponse').value;
+
+        try {
+            const data = JSON.parse(input);
+            currentRoutes = data.routes;
+
+            if (!currentRoutes || currentRoutes.length === 0) {
+                alert('No routes found in response');
+                return;
+            }
+
+            // Show route info panel
+            displayRouteInfo();
+
+            // Display first route
+            displayRoute(0);
+
+        } catch (e) {
+            alert('Invalid JSON: ' + e.message);
+        }
+    }
+
+    function displayRouteInfo() {
+        const infoDiv = document.getElementById('routeInfo');
+        infoDiv.style.display = 'block';
+
+        let html = '<h4 style="margin: 0 0 10px 0;">Routes:</h4>';
+        currentRoutes.forEach((route, idx) => {
+            const selected = idx === selectedRouteIndex ? 'selected' : '';
+            html += `
+                <div class="route-item ${selected}" onclick="displayRoute(${idx})">
+                    <strong>Route ${idx + 1}</strong><br>
+                    ${route.distance_km.toFixed(1)} km ·
+                    ${route.estimated_duration_minutes} min ·
+                    Score: ${route.score.toFixed(1)}/10<br>
+                    ${route.pois.length} waypoint POIs
+                    ${route.snapped_pois ? ` · ${route.snapped_pois.length} nearby POIs` : ''}
+                </div>
+            `;
+        });
+        infoDiv.innerHTML = html;
+    }
+
+    function displayRoute(index) {
+        selectedRouteIndex = index;
+        const route = currentRoutes[index];
+
+        // Clear existing markers and layers
+        clearMap();
+
+        // Convert path to GeoJSON LineString (Mapbox uses [lng, lat])
+        const lineCoordinates = route.path.map(coord => [coord.lng, coord.lat]);
+
+        // Add route line
+        if (map.getSource('route')) {
+            map.getSource('route').setData({
+                type: 'Feature',
+                geometry: {
+                    type: 'LineString',
+                    coordinates: lineCoordinates
+                }
+            });
+        } else {
+            map.addSource('route', {
+                type: 'geojson',
+                data: {
+                    type: 'Feature',
+                    geometry: {
+                        type: 'LineString',
+                        coordinates: lineCoordinates
+                    }
+                }
+            });
+
+            map.addLayer({
+                id: 'route',
+                type: 'line',
+                source: 'route',
+                layout: {
+                    'line-join': 'round',
+                    'line-cap': 'round'
+                },
+                paint: {
+                    'line-color': '#4264fb',
+                    'line-width': 4
+                }
+            });
+        }
+
+        // Add start/end marker
+        const startCoord = route.path[0];
+        const startEl = document.createElement('div');
+        startEl.className = 'start-marker';
+
+        const startMarker = new mapboxgl.Marker(startEl)
+            .setLngLat([startCoord.lng, startCoord.lat])
+            .setPopup(new mapboxgl.Popup().setHTML('<strong>Start/End</strong>'))
+            .addTo(map);
+        currentMarkers.push(startMarker);
+
+        // Add waypoint POI markers
+        route.pois.forEach((poi, idx) => {
+            const el = document.createElement('div');
+            el.className = 'poi-marker';
+            el.textContent = poi.order_in_route;
+
+            const popupHTML = `
+                <strong>${poi.name}</strong> (Waypoint)<br>
+                Category: ${poi.category}<br>
+                Popularity: ${poi.popularity_score.toFixed(0)}/100<br>
+                ${poi.description ? poi.description + '<br>' : ''}
+                Distance from start: ${poi.distance_from_start_km.toFixed(1)} km
+            `;
+
+            const marker = new mapboxgl.Marker(el)
+                .setLngLat([poi.coordinates.lng, poi.coordinates.lat])
+                .setPopup(new mapboxgl.Popup().setHTML(popupHTML))
+                .addTo(map);
+
+            currentMarkers.push(marker);
+        });
+
+        // Add snapped POI markers (nearby but not waypoints)
+        if (route.snapped_pois) {
+            route.snapped_pois.forEach((poi, idx) => {
+                const el = document.createElement('div');
+                el.className = 'snapped-poi-marker';
+
+                const popupHTML = `
+                    <strong>${poi.name}</strong> (Nearby)<br>
+                    Category: ${poi.category}<br>
+                    Popularity: ${poi.popularity_score.toFixed(0)}/100<br>
+                    ${poi.description ? poi.description + '<br>' : ''}
+                    Distance from path: ${poi.distance_from_path_m.toFixed(0)}m<br>
+                    Distance along route: ${poi.distance_from_start_km.toFixed(1)} km
+                `;
+
+                const marker = new mapboxgl.Marker(el)
+                    .setLngLat([poi.coordinates.lng, poi.coordinates.lat])
+                    .setPopup(new mapboxgl.Popup().setHTML(popupHTML))
+                    .addTo(map);
+
+                currentMarkers.push(marker);
+            });
+        }
+
+        // Fit map to route bounds
+        const bounds = new mapboxgl.LngLatBounds();
+        lineCoordinates.forEach(coord => bounds.extend(coord));
+        map.fitBounds(bounds, { padding: 50 });
+
+        // Update UI
+        displayRouteInfo();
+    }
+
+    function clearMap() {
+        // Remove markers
+        currentMarkers.forEach(marker => marker.remove());
+        currentMarkers = [];
+    }
+
+    // Example data (for testing without API)
+    const exampleData = {
+        "routes": [{
+            "id": "example",
+            "distance_km": 5.2,
+            "estimated_duration_minutes": 78,
+            "path": [
+                {"lat": 48.8566, "lng": 2.3522},
+                {"lat": 48.8584, "lng": 2.2945},
+                {"lat": 48.8556, "lng": 2.2986},
+                {"lat": 48.8566, "lng": 2.3522}
+            ],
+            "pois": [
+                {
+                    "name": "Eiffel Tower",
+                    "category": "monument",
+                    "coordinates": {"lat": 48.8584, "lng": 2.2945},
+                    "popularity_score": 95,
+                    "order_in_route": 1,
+                    "distance_from_start_km": 1.7,
+                    "description": "Iconic iron tower"
+                }
+            ],
+            "score": 8.5
+        }]
+    };
+
+    // Auto-load example on page load (remove in production)
+    // document.getElementById('apiResponse').value = JSON.stringify(exampleData, null, 2);
+</script>
+
+</body>
+</html>

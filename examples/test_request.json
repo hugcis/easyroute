@@ -1,0 +1,14 @@
+{
+  "start_point": {
+    "lat": 48.8566,
+    "lng": 2.3522
+  },
+  "distance_km": 5.0,
+  "distance_tolerance": 0.5,
+  "mode": "walk",
+  "preferences": {
+    "poi_categories": ["monument", "viewpoint", "park"],
+    "hidden_gems": false,
+    "max_alternatives": 3
+  }
+}

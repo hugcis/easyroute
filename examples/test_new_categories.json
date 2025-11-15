@@ -1,0 +1,18 @@
+{
+  "start_point": {
+    "lat": 47.21583675881611,
+    "lng": -1.5590187734028287
+  },
+  "distance_km": 7.0,
+  "distance_tolerance": 1.0,
+  "mode": "walk",
+  "preferences": {
+    "max_alternatives": 1,
+    "poi_categories": [
+      "church",
+      "castle",
+      "historic",
+      "viewpoint"
+    ]
+  }
+}
