@@ -57,7 +57,8 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "test"
+          shared-key: "ci-test"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
           cache-on-failure: true
 
       - name: Cache sqlx-cli
@@ -103,7 +104,8 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "check"
+          shared-key: "ci-check"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
           cache-on-failure: true
 
       - name: Cargo check
@@ -181,7 +183,8 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "coverage"
+          shared-key: "ci-coverage"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
           cache-on-failure: true
 
       - name: Cache sqlx-cli
