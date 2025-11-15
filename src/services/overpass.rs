@@ -1,3 +1,4 @@
+use crate::constants::*;
 use crate::error::{AppError, Result};
 use crate::models::{Coordinates, Poi, PoiCategory};
 use reqwest::Client;
@@ -91,9 +92,14 @@ impl OverpassClient {
         self.execute_query_with_retry_extended(query).await
     }
 
-    /// Extended retry for single queries (3 attempts vs 2 for batches)
-    async fn execute_query_with_retry_extended(&self, query: String) -> Result<Vec<Poi>> {
-        let max_retries = 2; // Total of 3 attempts for single queries
+    /// Execute query with configurable retry logic
+    /// Uses exponential backoff for timeouts and rate limiting
+    async fn execute_query_with_retry_internal(
+        &self,
+        query: String,
+        max_retries: usize,
+        query_type: &str,
+    ) -> Result<Vec<Poi>> {
         let mut retry_count = 0;
 
         loop {
@@ -104,7 +110,7 @@ impl OverpassClient {
                 .post(&endpoint)
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .body(format!("data={}", urlencoding::encode(&query)))
-                .timeout(std::time::Duration::from_secs(60))
+                .timeout(std::time::Duration::from_secs(OVERPASS_QUERY_TIMEOUT_SECONDS))
                 .send()
                 .await;
 
@@ -123,7 +129,8 @@ impl OverpassClient {
                         let backoff_ms = 1000 * (2_u64.pow(retry_count as u32));
 
                         tracing::warn!(
-                            "Overpass API {} ({}), retrying in {}ms (attempt {}/{})",
+                            "{} {} ({}), retrying in {}ms (attempt {}/{})",
+                            query_type,
                             error_msg,
                             endpoint,
                             backoff_ms,
@@ -153,7 +160,8 @@ impl OverpassClient {
                 return Ok(self.convert_elements_to_pois(api_response.elements));
             }
 
-            let is_retryable = status == 429 || status == 504;
+            let is_retryable =
+                status == OVERPASS_HTTP_TOO_MANY_REQUESTS || status == OVERPASS_HTTP_GATEWAY_TIMEOUT;
 
             let error_text = response
                 .text()
@@ -165,7 +173,8 @@ impl OverpassClient {
                 let backoff_ms = 1000 * (2_u64.pow(retry_count as u32));
 
                 tracing::warn!(
-                    "Overpass API returned HTTP {}, retrying in {}ms (attempt {}/{})",
+                    "{} returned HTTP {}, retrying in {}ms (attempt {}/{})",
+                    query_type,
                     status,
                     backoff_ms,
                     retry_count + 1,
@@ -181,6 +190,16 @@ impl OverpassClient {
                 status, error_text
             )));
         }
+    }
+
+    /// Extended retry for single queries (3 total attempts)
+    async fn execute_query_with_retry_extended(&self, query: String) -> Result<Vec<Poi>> {
+        self.execute_query_with_retry_internal(
+            query,
+            OVERPASS_RETRY_EXTENDED_MAX_ATTEMPTS,
+            "Overpass API query",
+        )
+        .await
     }
 
     /// Execute batched parallel queries
@@ -338,102 +357,14 @@ impl OverpassClient {
     }
 
     /// Execute a query with retry logic (extracted for reuse in batches)
+    /// Standard retry for batched queries (2 total attempts)
     async fn execute_query_with_retry(&self, query: String) -> Result<Vec<Poi>> {
-        // Retry configuration: 2 attempts for batched queries (faster failover)
-        let max_retries = 1; // Total of 2 attempts for individual batches
-        let mut retry_count = 0;
-
-        loop {
-            let endpoint = self.get_next_endpoint();
-
-            // Send request and handle both timeout and HTTP errors
-            let response_result = self
-                .client
-                .post(&endpoint)
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .body(format!("data={}", urlencoding::encode(&query)))
-                .timeout(std::time::Duration::from_secs(60))
-                .send()
-                .await;
-
-            // Handle request-level errors (timeouts, connection issues)
-            let response = match response_result {
-                Ok(resp) => resp,
-                Err(e) => {
-                    let is_timeout = e.is_timeout();
-                    let error_msg = if is_timeout {
-                        "Request timed out".to_string()
-                    } else {
-                        format!("Request failed: {}", e)
-                    };
-
-                    // Retry on timeout or connection errors
-                    if retry_count < max_retries {
-                        retry_count += 1;
-                        let backoff_ms = 1000 * (2_u64.pow(retry_count as u32)); // 2s, 4s
-
-                        tracing::warn!(
-                            "Batch query {} ({}), retrying in {}ms (attempt {}/{})",
-                            error_msg,
-                            endpoint,
-                            backoff_ms,
-                            retry_count + 1,
-                            max_retries + 1
-                        );
-
-                        tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
-                        continue;
-                    } else {
-                        return Err(AppError::OverpassApi(format!(
-                            "{} after {} retries",
-                            error_msg,
-                            max_retries + 1
-                        )));
-                    }
-                }
-            };
-
-            let status = response.status();
-
-            // Handle success
-            if status.is_success() {
-                let api_response: OverpassResponse = response.json().await.map_err(|e| {
-                    AppError::OverpassApi(format!("Failed to parse response: {}", e))
-                })?;
-
-                return Ok(self.convert_elements_to_pois(api_response.elements));
-            }
-
-            // Handle retryable HTTP errors (429 Too Many Requests, 504 Gateway Timeout)
-            let is_retryable = status == 429 || status == 504;
-
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-
-            if is_retryable && retry_count < max_retries {
-                retry_count += 1;
-                let backoff_ms = 1000 * (2_u64.pow(retry_count as u32));
-
-                tracing::warn!(
-                    "Batch query returned HTTP {}, retrying in {}ms (attempt {}/{})",
-                    status,
-                    backoff_ms,
-                    retry_count + 1,
-                    max_retries + 1
-                );
-
-                tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
-                continue;
-            }
-
-            // Non-retryable error or max retries exceeded
-            return Err(AppError::OverpassApi(format!(
-                "HTTP {}: {}",
-                status, error_text
-            )));
-        }
+        self.execute_query_with_retry_internal(
+            query,
+            OVERPASS_RETRY_MAX_ATTEMPTS,
+            "Batch query",
+        )
+        .await
     }
 
     fn build_query(

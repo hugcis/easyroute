@@ -1,15 +1,10 @@
+use crate::constants::*;
 use crate::error::{AppError, Result};
 use crate::models::{Coordinates, Poi, Route, RoutePoi, RoutePreferences, TransportMode};
 use crate::services::mapbox::{DirectionsResponse, MapboxClient};
 use crate::services::poi_service::PoiService;
 use crate::services::snapping_service::SnappingService;
 use std::collections::HashSet;
-
-// Route generation constants
-const MIN_POI_DISTANCE_KM: f64 = 0.2; // Minimum distance from start to POI
-const MIN_ANGLE_DIFF_TWO_POIS: f64 = 1.0; // ~57 degrees in radians
-const MIN_ANGLE_DIFF_THREE_POIS: f64 = 1.047; // ~60 degrees in radians
-const MAX_DISTANCE_RETRIES: usize = 5; // Maximum attempts to achieve target distance
 
 pub struct RouteGenerator {
     mapbox_client: MapboxClient,
@@ -76,7 +71,9 @@ impl RouteGenerator {
 
         // Step 3: Generate multiple route alternatives
         // Use at least 3 attempts even if user requested 1, to increase success rate
-        let max_alternatives = preferences.max_alternatives.clamp(3, 5) as usize;
+        let max_alternatives = preferences
+            .max_alternatives
+            .clamp(MIN_ALTERNATIVES_FOR_SUCCESS, MAX_ALTERNATIVES_CLAMP) as usize;
         let mut routes = Vec::new();
 
         for attempt in 0..max_alternatives {
@@ -125,6 +122,37 @@ impl RouteGenerator {
         Ok(scored_routes)
     }
 
+    /// Calculate adjusted target distance based on retry attempt
+    /// Uses progressive adjustment strategy to find viable routes
+    fn calculate_adjusted_target_distance(target_distance_km: f64, retry: usize) -> f64 {
+        if retry == 0 {
+            target_distance_km
+        } else if retry <= 2 {
+            // Try variations around the target
+            target_distance_km
+                * (DISTANCE_ADJUSTMENT_INITIAL_MULTIPLIER + (retry as f64 * DISTANCE_ADJUSTMENT_INITIAL_STEP))
+        } else {
+            // More aggressive adjustments for later retries
+            target_distance_km
+                * (DISTANCE_ADJUSTMENT_AGGRESSIVE_MULTIPLIER
+                    + (retry as f64 * DISTANCE_ADJUSTMENT_AGGRESSIVE_STEP))
+        }
+    }
+
+    /// Check if a distance is within the acceptable tolerance range
+    fn is_distance_within_tolerance(distance_km: f64, min_distance: f64, max_distance: f64) -> bool {
+        (min_distance..=max_distance).contains(&distance_km)
+    }
+
+    /// Build the complete waypoint sequence for a loop route
+    /// Returns: Start → POI1 → POI2 → [POI3] → Start
+    fn build_loop_waypoints(start: &Coordinates, selected_pois: &[Poi]) -> Vec<Coordinates> {
+        let mut waypoints = vec![*start];
+        waypoints.extend(selected_pois.iter().map(|p| p.coordinates));
+        waypoints.push(*start); // Return to start
+        waypoints
+    }
+
     /// Try to generate a single loop route with selected waypoints
     #[allow(clippy::too_many_arguments)]
     async fn try_generate_loop(
@@ -134,46 +162,29 @@ impl RouteGenerator {
         distance_tolerance: f64,
         mode: &TransportMode,
         candidate_pois: &[Poi],
-        variation: usize,
+        attempt_seed: usize,
         preferences: &RoutePreferences,
     ) -> Result<Route> {
         let min_distance = target_distance_km - distance_tolerance;
         let max_distance = target_distance_km + distance_tolerance;
 
-        for retry in 0..MAX_DISTANCE_RETRIES {
-            // Adjust target distance based on previous attempts
-            // First attempt: use target distance
-            // Later attempts: adjust based on whether we were too long or too short
-            let adjusted_target = if retry == 0 {
-                target_distance_km
-            } else if retry <= 2 {
-                // Try variations around the target
-                target_distance_km * (0.8 + (retry as f64 * 0.2))
-            } else {
-                // More aggressive adjustments for later retries
-                target_distance_km * (0.6 + (retry as f64 * 0.15))
-            };
+        for retry in 0..MAX_ROUTE_GENERATION_RETRIES {
+            let adjusted_target = Self::calculate_adjusted_target_distance(target_distance_km, retry);
 
             // Select POIs with different variation seed for each retry
             let selected_pois = self.select_loop_waypoints(
                 start,
                 adjusted_target,
                 candidate_pois,
-                variation * MAX_DISTANCE_RETRIES + retry, // Different seed each time
+                attempt_seed * MAX_ROUTE_GENERATION_RETRIES + retry, // Different seed each time
             )?;
 
-            // Build waypoint sequence: Start → POI1 → POI2 → [POI3] → Start
-            let mut waypoints = vec![*start];
-            waypoints.extend(selected_pois.iter().map(|p| p.coordinates));
-            waypoints.push(*start); // Return to start
-
+            let waypoints = Self::build_loop_waypoints(start, &selected_pois);
             let directions = self.mapbox_client.get_directions(&waypoints, mode).await?;
-
             let distance_km = directions.distance_km();
 
             // Check if distance is within tolerance
-            if (min_distance..=max_distance).contains(&distance_km) {
-                // Success! Build the route
+            if Self::is_distance_within_tolerance(distance_km, min_distance, max_distance) {
                 tracing::info!(
                     "Found valid route on attempt {} ({}km, target: {}km ± {}km)",
                     retry + 1,
@@ -187,7 +198,7 @@ impl RouteGenerator {
             }
 
             // If not within tolerance, log and retry with different POIs
-            if retry < MAX_DISTANCE_RETRIES - 1 {
+            if retry < MAX_ROUTE_GENERATION_RETRIES - 1 {
                 let error_pct =
                     (distance_km - target_distance_km).abs() / target_distance_km * 100.0;
                 tracing::debug!(
@@ -204,7 +215,7 @@ impl RouteGenerator {
         // All retries exhausted
         Err(AppError::RouteGeneration(format!(
             "Could not achieve target distance after {} attempts with {} candidate POIs (wanted {}km ± {}km)",
-            MAX_DISTANCE_RETRIES, candidate_pois.len(), target_distance_km, distance_tolerance
+            MAX_ROUTE_GENERATION_RETRIES, candidate_pois.len(), target_distance_km, distance_tolerance
         )))
     }
 
@@ -215,7 +226,7 @@ impl RouteGenerator {
         start: &Coordinates,
         target_distance_km: f64,
         pois: &[Poi],
-        variation: usize,
+        attempt_seed: usize,
     ) -> Result<Vec<Poi>> {
         if pois.len() < 2 {
             return Err(AppError::RouteGeneration(
@@ -225,13 +236,16 @@ impl RouteGenerator {
 
         // Adjust number of waypoints based on available POIs AND target distance
         // Longer routes need more waypoints to fill the distance
-        let num_waypoints = if (target_distance_km > 10.0 && pois.len() >= 6)
-            || (target_distance_km > 5.0 && pois.len() >= 4)
-        {
-            3 // Use 3 waypoints for longer routes with enough POIs
-        } else {
-            2 // Use 2 waypoints for shorter routes or limited POIs
-        };
+        let num_waypoints =
+            if (target_distance_km > WAYPOINTS_LONG_ROUTE_DISTANCE_KM
+                && pois.len() >= WAYPOINTS_LONG_ROUTE_MIN_POIS)
+                || (target_distance_km > WAYPOINTS_MEDIUM_ROUTE_DISTANCE_KM
+                    && pois.len() >= WAYPOINTS_MEDIUM_ROUTE_MIN_POIS)
+            {
+                WAYPOINTS_COUNT_LONG_ROUTE // Use 3 waypoints for longer routes with enough POIs
+            } else {
+                WAYPOINTS_COUNT_SHORT_ROUTE // Use 2 waypoints for shorter routes or limited POIs
+            };
 
         // Target distance from start for waypoints
         // For a loop, we want POIs that are closer to create a reasonable circuit
@@ -246,14 +260,14 @@ impl RouteGenerator {
             .filter_map(|(idx, poi)| {
                 let dist = start.distance_to(&poi.coordinates);
 
-                // Skip POIs that are too close to start
+                // Skip POIs that are way too close (less than 200m)
                 if dist < MIN_POI_DISTANCE_KM {
                     return None;
                 }
 
                 // Skip POIs that are too far (more than search radius)
                 // Search radius is roughly target_distance / 2
-                let max_reasonable_dist = target_distance_km / 1.5;
+                let max_reasonable_dist = target_distance_km / MAX_DISTANCE_RATIO;
                 if dist > max_reasonable_dist {
                     return None;
                 }
@@ -272,7 +286,10 @@ impl RouteGenerator {
                 // Add variation offset based on attempt number to get different routes
                 // Use larger offset to ensure different POIs are selected each retry
                 // Variation rotates through different POIs: variation 0-4 each get different POIs
-                let variation_offset = ((idx * 3 + variation * 11) % 100) as f32 * 0.05;
+                let variation_offset =
+                    ((idx * VARIATION_MULTIPLIER + attempt_seed * VARIATION_OFFSET_BASE) % VARIATION_MOD)
+                        as f32
+                        * VARIATION_SCORE_FACTOR;
 
                 Some((distance_score + variation_offset, poi))
             })
@@ -312,25 +329,25 @@ impl RouteGenerator {
         // Sort by score
         scored_pois.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-        // Use variation to select DIFFERENT POIs each retry
-        // Skip the first (variation % available_pois) POIs to get different combinations
+        // Use attempt_seed to select DIFFERENT POIs each retry
+        // Skip the first (attempt_seed % available_pois) POIs to get different combinations
         let skip_count = if scored_pois.len() > num_waypoints {
-            variation % (scored_pois.len() - num_waypoints + 1)
+            attempt_seed % (scored_pois.len() - num_waypoints + 1)
         } else {
             0
         };
 
         let selected: Vec<Poi> = scored_pois
             .iter()
-            .skip(skip_count) // Skip different POIs based on variation!
+            .skip(skip_count) // Skip different POIs based on attempt_seed!
             .take(num_waypoints)
             .map(|(_, poi)| (*poi).clone())
             .collect();
 
         tracing::debug!(
-            "Selected {} POIs (variation={}, skip={}): {}",
+            "Selected {} POIs (attempt_seed={}, skip={}): {}",
             selected.len(),
-            variation,
+            attempt_seed,
             skip_count,
             selected
                 .iter()
@@ -366,9 +383,9 @@ impl RouteGenerator {
 
         // Check minimum angle difference (should be at least 60 degrees for 3 POIs)
         let min_angle_diff = if pois.len() == 2 {
-            MIN_ANGLE_DIFF_TWO_POIS
+            SPATIAL_DISTRIBUTION_MIN_ANGLE_TWO_POIS_RAD
         } else {
-            MIN_ANGLE_DIFF_THREE_POIS
+            SPATIAL_DISTRIBUTION_MIN_ANGLE_THREE_POIS_RAD
         };
 
         for i in 0..angles.len() {
