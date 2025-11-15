@@ -10,6 +10,7 @@ env:
   DATABASE_URL: postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute
   REDIS_URL: redis://localhost:6379
   MAPBOX_API_KEY: test_api_key_for_ci
+  SKIP_REAL_API_TESTS: 1
 
 jobs:
   quick-check:
