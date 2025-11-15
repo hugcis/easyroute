@@ -110,7 +110,9 @@ impl OverpassClient {
                 .post(&endpoint)
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .body(format!("data={}", urlencoding::encode(&query)))
-                .timeout(std::time::Duration::from_secs(OVERPASS_QUERY_TIMEOUT_SECONDS))
+                .timeout(std::time::Duration::from_secs(
+                    OVERPASS_QUERY_TIMEOUT_SECONDS,
+                ))
                 .send()
                 .await;
 
@@ -160,8 +162,8 @@ impl OverpassClient {
                 return Ok(self.convert_elements_to_pois(api_response.elements));
             }
 
-            let is_retryable =
-                status == OVERPASS_HTTP_TOO_MANY_REQUESTS || status == OVERPASS_HTTP_GATEWAY_TIMEOUT;
+            let is_retryable = status == OVERPASS_HTTP_TOO_MANY_REQUESTS
+                || status == OVERPASS_HTTP_GATEWAY_TIMEOUT;
 
             let error_text = response
                 .text()
@@ -359,12 +361,8 @@ impl OverpassClient {
     /// Execute a query with retry logic (extracted for reuse in batches)
     /// Standard retry for batched queries (2 total attempts)
     async fn execute_query_with_retry(&self, query: String) -> Result<Vec<Poi>> {
-        self.execute_query_with_retry_internal(
-            query,
-            OVERPASS_RETRY_MAX_ATTEMPTS,
-            "Batch query",
-        )
-        .await
+        self.execute_query_with_retry_internal(query, OVERPASS_RETRY_MAX_ATTEMPTS, "Batch query")
+            .await
     }
 
     fn build_query(

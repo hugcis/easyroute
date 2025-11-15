@@ -73,7 +73,8 @@ impl RouteGenerator {
         // Use at least 3 attempts even if user requested 1, to increase success rate
         let max_alternatives = preferences
             .max_alternatives
-            .clamp(MIN_ALTERNATIVES_FOR_SUCCESS, MAX_ALTERNATIVES_CLAMP) as usize;
+            .clamp(MIN_ALTERNATIVES_FOR_SUCCESS, MAX_ALTERNATIVES_CLAMP)
+            as usize;
         let mut routes = Vec::new();
 
         for attempt in 0..max_alternatives {
@@ -130,7 +131,8 @@ impl RouteGenerator {
         } else if retry <= 2 {
             // Try variations around the target
             target_distance_km
-                * (DISTANCE_ADJUSTMENT_INITIAL_MULTIPLIER + (retry as f64 * DISTANCE_ADJUSTMENT_INITIAL_STEP))
+                * (DISTANCE_ADJUSTMENT_INITIAL_MULTIPLIER
+                    + (retry as f64 * DISTANCE_ADJUSTMENT_INITIAL_STEP))
         } else {
             // More aggressive adjustments for later retries
             target_distance_km
@@ -140,7 +142,11 @@ impl RouteGenerator {
     }
 
     /// Check if a distance is within the acceptable tolerance range
-    fn is_distance_within_tolerance(distance_km: f64, min_distance: f64, max_distance: f64) -> bool {
+    fn is_distance_within_tolerance(
+        distance_km: f64,
+        min_distance: f64,
+        max_distance: f64,
+    ) -> bool {
         (min_distance..=max_distance).contains(&distance_km)
     }
 
@@ -169,7 +175,8 @@ impl RouteGenerator {
         let max_distance = target_distance_km + distance_tolerance;
 
         for retry in 0..MAX_ROUTE_GENERATION_RETRIES {
-            let adjusted_target = Self::calculate_adjusted_target_distance(target_distance_km, retry);
+            let adjusted_target =
+                Self::calculate_adjusted_target_distance(target_distance_km, retry);
 
             // Select POIs with different variation seed for each retry
             let selected_pois = self.select_loop_waypoints(
@@ -236,16 +243,15 @@ impl RouteGenerator {
 
         // Adjust number of waypoints based on available POIs AND target distance
         // Longer routes need more waypoints to fill the distance
-        let num_waypoints =
-            if (target_distance_km > WAYPOINTS_LONG_ROUTE_DISTANCE_KM
-                && pois.len() >= WAYPOINTS_LONG_ROUTE_MIN_POIS)
-                || (target_distance_km > WAYPOINTS_MEDIUM_ROUTE_DISTANCE_KM
-                    && pois.len() >= WAYPOINTS_MEDIUM_ROUTE_MIN_POIS)
-            {
-                WAYPOINTS_COUNT_LONG_ROUTE // Use 3 waypoints for longer routes with enough POIs
-            } else {
-                WAYPOINTS_COUNT_SHORT_ROUTE // Use 2 waypoints for shorter routes or limited POIs
-            };
+        let num_waypoints = if (target_distance_km > WAYPOINTS_LONG_ROUTE_DISTANCE_KM
+            && pois.len() >= WAYPOINTS_LONG_ROUTE_MIN_POIS)
+            || (target_distance_km > WAYPOINTS_MEDIUM_ROUTE_DISTANCE_KM
+                && pois.len() >= WAYPOINTS_MEDIUM_ROUTE_MIN_POIS)
+        {
+            WAYPOINTS_COUNT_LONG_ROUTE // Use 3 waypoints for longer routes with enough POIs
+        } else {
+            WAYPOINTS_COUNT_SHORT_ROUTE // Use 2 waypoints for shorter routes or limited POIs
+        };
 
         // Target distance from start for waypoints
         // For a loop, we want POIs that are closer to create a reasonable circuit
@@ -286,10 +292,10 @@ impl RouteGenerator {
                 // Add variation offset based on attempt number to get different routes
                 // Use larger offset to ensure different POIs are selected each retry
                 // Variation rotates through different POIs: variation 0-4 each get different POIs
-                let variation_offset =
-                    ((idx * VARIATION_MULTIPLIER + attempt_seed * VARIATION_OFFSET_BASE) % VARIATION_MOD)
-                        as f32
-                        * VARIATION_SCORE_FACTOR;
+                let variation_offset = ((idx * VARIATION_MULTIPLIER
+                    + attempt_seed * VARIATION_OFFSET_BASE)
+                    % VARIATION_MOD) as f32
+                    * VARIATION_SCORE_FACTOR;
 
                 Some((distance_score + variation_offset, poi))
             })
