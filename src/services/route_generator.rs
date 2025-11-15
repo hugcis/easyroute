@@ -329,11 +329,8 @@ impl RouteGenerator {
             scored_pois = self.fallback_score_closest_pois(start, pois, num_waypoints)?;
         }
 
-        let selected = self.select_top_pois_with_variation(
-            scored_pois,
-            num_waypoints,
-            attempt_seed,
-        );
+        let selected =
+            self.select_top_pois_with_variation(scored_pois, num_waypoints, attempt_seed);
 
         // Spatial distribution check (informational only for MVP)
         if selected.len() >= 2 && !self.are_spatially_distributed(start, &selected) {
@@ -399,8 +396,8 @@ impl RouteGenerator {
 
     /// Calculate variation offset to ensure different POIs are selected on each attempt
     fn calculate_variation_offset(&self, poi_index: usize, attempt_seed: usize) -> f32 {
-        ((poi_index * VARIATION_MULTIPLIER + attempt_seed * VARIATION_OFFSET_BASE)
-            % VARIATION_MOD) as f32
+        ((poi_index * VARIATION_MULTIPLIER + attempt_seed * VARIATION_OFFSET_BASE) % VARIATION_MOD)
+            as f32
             * VARIATION_SCORE_FACTOR
     }
 

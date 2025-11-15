@@ -15,7 +15,8 @@ pub async fn find_pois_within_radius(
 
     let rows = if let Some(cats) = categories {
         let category_strs: Vec<String> = cats.iter().map(|c| c.to_string()).collect();
-        execute_radius_query_with_categories(pool, &point_wkt, radius_meters, &category_strs, limit).await?
+        execute_radius_query_with_categories(pool, &point_wkt, radius_meters, &category_strs, limit)
+            .await?
     } else {
         execute_radius_query_without_categories(pool, &point_wkt, radius_meters, limit).await?
     };
@@ -113,9 +114,19 @@ pub async fn find_pois_in_bbox(
 ) -> Result<Vec<Poi>, sqlx::Error> {
     let rows = if let Some(cats) = categories {
         let category_strs: Vec<String> = cats.iter().map(|c| c.to_string()).collect();
-        execute_bbox_query_with_categories(pool, min_lat, max_lat, min_lng, max_lng, &category_strs, limit).await?
+        execute_bbox_query_with_categories(
+            pool,
+            min_lat,
+            max_lat,
+            min_lng,
+            max_lng,
+            &category_strs,
+            limit,
+        )
+        .await?
     } else {
-        execute_bbox_query_without_categories(pool, min_lat, max_lat, min_lng, max_lng, limit).await?
+        execute_bbox_query_without_categories(pool, min_lat, max_lat, min_lng, max_lng, limit)
+            .await?
     };
 
     Ok(rows.into_iter().map(|row| row.into()).collect())
