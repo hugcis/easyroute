@@ -5,7 +5,7 @@ use crate::services::overpass::OverpassClient;
 use sqlx::PgPool;
 
 // POI service constants
-const POI_COUNT_MULTIPLIER: f64 = 2.5;  // Multiplier for calculating minimum POI count based on radius
+const POI_COUNT_MULTIPLIER: f64 = 2.5; // Multiplier for calculating minimum POI count based on radius
 
 pub struct PoiService {
     db_pool: PgPool,
@@ -88,7 +88,10 @@ impl PoiService {
                                 tracing::debug!("Failed to insert POI {}: {}", poi.name, e);
                             }
                         }
-                        tracing::info!("Fetched {} POIs from Overpass API (single query)", overpass_pois.len());
+                        tracing::info!(
+                            "Fetched {} POIs from Overpass API (single query)",
+                            overpass_pois.len()
+                        );
                         return Ok(overpass_pois.into_iter().take(limit).collect());
                     }
                 };

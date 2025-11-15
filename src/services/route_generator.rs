@@ -6,10 +6,10 @@ use crate::services::snapping_service::SnappingService;
 use std::collections::HashSet;
 
 // Route generation constants
-const MIN_POI_DISTANCE_KM: f64 = 0.2;  // Minimum distance from start to POI
-const MIN_ANGLE_DIFF_TWO_POIS: f64 = 1.0;  // ~57 degrees in radians
-const MIN_ANGLE_DIFF_THREE_POIS: f64 = 1.047;  // ~60 degrees in radians
-const MAX_DISTANCE_RETRIES: usize = 5;  // Maximum attempts to achieve target distance
+const MIN_POI_DISTANCE_KM: f64 = 0.2; // Minimum distance from start to POI
+const MIN_ANGLE_DIFF_TWO_POIS: f64 = 1.0; // ~57 degrees in radians
+const MIN_ANGLE_DIFF_THREE_POIS: f64 = 1.047; // ~60 degrees in radians
+const MAX_DISTANCE_RETRIES: usize = 5; // Maximum attempts to achieve target distance
 
 pub struct RouteGenerator {
     mapbox_client: MapboxClient,
@@ -188,7 +188,8 @@ impl RouteGenerator {
 
             // If not within tolerance, log and retry with different POIs
             if retry < MAX_DISTANCE_RETRIES - 1 {
-                let error_pct = (distance_km - target_distance_km).abs() / target_distance_km * 100.0;
+                let error_pct =
+                    (distance_km - target_distance_km).abs() / target_distance_km * 100.0;
                 tracing::debug!(
                     "Attempt {} failed: {}km outside tolerance ({}km - {}km), error: {:.1}%",
                     retry + 1,

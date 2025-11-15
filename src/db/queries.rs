@@ -220,15 +220,18 @@ impl From<PoiRow> for Poi {
         });
 
         // Safely convert visit duration, rejecting negative values
-        let estimated_visit_duration_minutes = row.estimated_visit_duration_minutes
-            .and_then(|d| if d >= 0 { Some(d as u32) } else {
+        let estimated_visit_duration_minutes = row.estimated_visit_duration_minutes.and_then(|d| {
+            if d >= 0 {
+                Some(d as u32)
+            } else {
                 tracing::warn!(
                     "Negative visit duration {} for POI '{}', ignoring",
                     d,
                     row.name
                 );
                 None
-            });
+            }
+        });
 
         Poi {
             id: row.id,
@@ -282,15 +285,18 @@ impl From<PoiRowSimple> for Poi {
         });
 
         // Safely convert visit duration
-        let estimated_visit_duration_minutes = row.estimated_visit_duration_minutes
-            .and_then(|d| if d >= 0 { Some(d as u32) } else {
+        let estimated_visit_duration_minutes = row.estimated_visit_duration_minutes.and_then(|d| {
+            if d >= 0 {
+                Some(d as u32)
+            } else {
                 tracing::warn!(
                     "Negative visit duration {} for POI '{}', ignoring",
                     d,
                     row.name
                 );
                 None
-            });
+            }
+        });
 
         Poi {
             id: row.id,
