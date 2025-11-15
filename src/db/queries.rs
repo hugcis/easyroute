@@ -94,7 +94,7 @@ pub async fn find_pois_in_bbox(
     let query = if let Some(cats) = categories {
         let category_strs: Vec<String> = cats.iter().map(|c| c.to_string()).collect();
 
-        sqlx::query_as::<_, PoiRowSimple>(
+        sqlx::query_as::<_, PoiRow>(
             r#"
             SELECT
                 id,
@@ -105,7 +105,8 @@ pub async fn find_pois_in_bbox(
                 popularity_score,
                 description,
                 estimated_visit_duration_minutes,
-                osm_id
+                osm_id,
+                NULL::float8 as distance_meters
             FROM pois
             WHERE ST_Y(location::geometry) BETWEEN $1 AND $2
             AND ST_X(location::geometry) BETWEEN $3 AND $4
@@ -122,7 +123,7 @@ pub async fn find_pois_in_bbox(
         .fetch_all(pool)
         .await?
     } else {
-        sqlx::query_as::<_, PoiRowSimple>(
+        sqlx::query_as::<_, PoiRow>(
             r#"
             SELECT
                 id,
@@ -133,7 +134,8 @@ pub async fn find_pois_in_bbox(
                 popularity_score,
                 description,
                 estimated_visit_duration_minutes,
-                osm_id
+                osm_id,
+                NULL::float8 as distance_meters
             FROM pois
             WHERE ST_Y(location::geometry) BETWEEN $1 AND $2
             AND ST_X(location::geometry) BETWEEN $3 AND $4
@@ -189,8 +191,10 @@ struct PoiRow {
     description: Option<String>,
     estimated_visit_duration_minutes: Option<i32>,
     osm_id: Option<i64>,
+    // Distance is optional - only present in radius queries
+    // Not used in conversion but needed for deserialization
     #[allow(dead_code)]
-    distance_meters: f64,
+    distance_meters: Option<f64>,
 }
 
 impl From<PoiRow> for Poi {
@@ -220,71 +224,6 @@ impl From<PoiRow> for Poi {
         });
 
         // Safely convert visit duration, rejecting negative values
-        let estimated_visit_duration_minutes = row.estimated_visit_duration_minutes.and_then(|d| {
-            if d >= 0 {
-                Some(d as u32)
-            } else {
-                tracing::warn!(
-                    "Negative visit duration {} for POI '{}', ignoring",
-                    d,
-                    row.name
-                );
-                None
-            }
-        });
-
-        Poi {
-            id: row.id,
-            name: row.name,
-            category,
-            coordinates,
-            popularity_score: row.popularity_score,
-            description: row.description,
-            estimated_visit_duration_minutes,
-            osm_id: row.osm_id,
-        }
-    }
-}
-
-// Helper struct for deserializing POI rows (without distance)
-#[derive(sqlx::FromRow)]
-struct PoiRowSimple {
-    id: Uuid,
-    name: String,
-    category: String,
-    lat: f64,
-    lng: f64,
-    popularity_score: f32,
-    description: Option<String>,
-    estimated_visit_duration_minutes: Option<i32>,
-    osm_id: Option<i64>,
-}
-
-impl From<PoiRowSimple> for Poi {
-    fn from(row: PoiRowSimple) -> Self {
-        // Parse category with warning on failure
-        let category = row.category.parse().unwrap_or_else(|_| {
-            tracing::warn!(
-                "Invalid POI category '{}' for POI '{}' (id: {}), defaulting to Historic",
-                row.category,
-                row.name,
-                row.id
-            );
-            PoiCategory::Historic
-        });
-
-        // Construct coordinates safely
-        let coordinates = Coordinates::new(row.lat, row.lng).unwrap_or_else(|e| {
-            tracing::error!(
-                "Invalid coordinates for POI '{}' (id: {}): {}. Using fallback.",
-                row.name,
-                row.id,
-                e
-            );
-            Coordinates { lat: 0.0, lng: 0.0 }
-        });
-
-        // Safely convert visit duration
         let estimated_visit_duration_minutes = row.estimated_visit_duration_minutes.and_then(|d| {
             if d >= 0 {
                 Some(d as u32)
