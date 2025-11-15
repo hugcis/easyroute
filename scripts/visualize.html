@@ -18,7 +18,9 @@
             padding: 15px;
             border-radius: 5px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-            max-width: 300px;
+            max-width: 320px;
+            max-height: calc(100vh - 20px);
+            overflow-y: auto;
             z-index: 1;
         }
 
@@ -104,6 +106,94 @@
             border: 3px solid white;
             box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
+
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 15px;
+        }
+
+        .tab {
+            padding: 8px 16px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 13px;
+            color: #666;
+            border-radius: 0;
+        }
+
+        .tab.active {
+            color: #4264fb;
+            border-bottom: 2px solid #4264fb;
+            font-weight: 600;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            color: #333;
+            margin-bottom: 4px;
+            font-weight: 500;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-size: 13px;
+            box-sizing: border-box;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .checkbox-group {
+            margin-top: 8px;
+        }
+
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            font-size: 12px;
+            margin-bottom: 4px;
+            font-weight: normal;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+            margin-right: 6px;
+        }
+
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .error {
+            background: #fee;
+            color: #c00;
+            padding: 10px;
+            border-radius: 3px;
+            font-size: 12px;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -111,10 +201,94 @@
 <div id="map"></div>
 
 <div class="controls">
-    <h3 style="margin-top: 0;">EasyRoute Visualizer</h3>
-    <p style="font-size: 12px; color: #666;">Paste API response JSON below:</p>
-    <textarea class="api-input" id="apiResponse" placeholder='{"routes": [...]}'></textarea>
-    <button onclick="visualizeRoutes()">Visualize Routes</button>
+    <h3 style="margin-top: 0;">EasyRoute Tester</h3>
+
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('generate')">Generate Route</button>
+        <button class="tab" onclick="switchTab('paste')">Paste JSON</button>
+    </div>
+
+    <!-- Generate Route Tab -->
+    <div id="generateTab" class="tab-content active">
+        <div class="form-group">
+            <label>API Endpoint</label>
+            <input type="text" id="apiEndpoint" value="http://localhost:8080" placeholder="http://localhost:8080">
+        </div>
+
+        <div class="form-group">
+            <label>Route Type</label>
+            <select id="routeType" onchange="updateRouteTypeFields()">
+                <option value="loop">Loop Route</option>
+                <option value="point-to-point">Point-to-Point</option>
+            </select>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>Start Latitude</label>
+                <input type="number" id="startLat" value="48.8566" step="0.0001" placeholder="48.8566">
+            </div>
+            <div class="form-group">
+                <label>Start Longitude</label>
+                <input type="number" id="startLng" value="2.3522" step="0.0001" placeholder="2.3522">
+            </div>
+        </div>
+
+        <div id="endPointFields" style="display: none;">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>End Latitude</label>
+                    <input type="number" id="endLat" value="48.8606" step="0.0001" placeholder="48.8606">
+                </div>
+                <div class="form-group">
+                    <label>End Longitude</label>
+                    <input type="number" id="endLng" value="2.3376" step="0.0001" placeholder="2.3376">
+                </div>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>Distance (km)</label>
+                <input type="number" id="distance" value="5.0" step="0.5" min="0.5" max="50" placeholder="5.0">
+            </div>
+            <div class="form-group">
+                <label>Mode</label>
+                <select id="mode">
+                    <option value="walking">Walking</option>
+                    <option value="cycling">Cycling</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>POI Categories (optional)</label>
+            <div class="checkbox-group">
+                <label><input type="checkbox" value="monument"> Monuments</label>
+                <label><input type="checkbox" value="park"> Parks</label>
+                <label><input type="checkbox" value="museum"> Museums</label>
+                <label><input type="checkbox" value="viewpoint"> Viewpoints</label>
+                <label><input type="checkbox" value="historic"> Historic Sites</label>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <div class="checkbox-group">
+                <label><input type="checkbox" id="hiddenGems"> Prefer Hidden Gems</label>
+            </div>
+        </div>
+
+        <button onclick="generateRoute()" id="generateBtn">Generate Route</button>
+        <div id="errorMsg" style="display: none;"></div>
+    </div>
+
+    <!-- Paste JSON Tab -->
+    <div id="pasteTab" class="tab-content">
+        <p style="font-size: 12px; color: #666; margin-top: 0;">Paste API response JSON below:</p>
+        <textarea class="api-input" id="apiResponse" placeholder='{"routes": [...]}'></textarea>
+        <button onclick="visualizeRoutes()">Visualize Routes</button>
+    </div>
+
     <div id="routeInfo" class="route-info" style="display: none;"></div>
 </div>
 
@@ -134,6 +308,159 @@
     let currentMarkers = [];
     let currentRoutes = null;
     let selectedRouteIndex = 0;
+
+    // Tab switching
+    function switchTab(tabName) {
+        // Update tab buttons
+        document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+        event.target.classList.add('active');
+
+        // Update tab content
+        document.getElementById('generateTab').classList.remove('active');
+        document.getElementById('pasteTab').classList.remove('active');
+
+        if (tabName === 'generate') {
+            document.getElementById('generateTab').classList.add('active');
+        } else {
+            document.getElementById('pasteTab').classList.add('active');
+        }
+    }
+
+    // Update form fields based on route type
+    function updateRouteTypeFields() {
+        const routeType = document.getElementById('routeType').value;
+        const endPointFields = document.getElementById('endPointFields');
+
+        if (routeType === 'point-to-point') {
+            endPointFields.style.display = 'block';
+        } else {
+            endPointFields.style.display = 'none';
+        }
+    }
+
+    // Generate route by calling the API
+    async function generateRoute() {
+        const btn = document.getElementById('generateBtn');
+        const errorMsg = document.getElementById('errorMsg');
+        const controls = document.querySelector('.controls');
+
+        // Clear previous errors
+        errorMsg.style.display = 'none';
+        errorMsg.className = '';
+
+        // Show loading state
+        btn.disabled = true;
+        btn.textContent = 'Generating...';
+        controls.classList.add('loading');
+
+        try {
+            // Get form values
+            const apiEndpoint = document.getElementById('apiEndpoint').value.trim();
+            const routeType = document.getElementById('routeType').value;
+            const startLat = parseFloat(document.getElementById('startLat').value);
+            const startLng = parseFloat(document.getElementById('startLng').value);
+            const distance = parseFloat(document.getElementById('distance').value);
+            const mode = document.getElementById('mode').value;
+
+            // Validate inputs
+            if (!apiEndpoint) throw new Error('API endpoint is required');
+            if (isNaN(startLat) || isNaN(startLng)) throw new Error('Invalid start coordinates');
+            if (isNaN(distance) || distance <= 0) throw new Error('Invalid distance');
+
+            // Build request body
+            const requestBody = {
+                start_point: {
+                    lat: startLat,
+                    lng: startLng
+                },
+                target_distance_km: distance,
+                mode: mode
+            };
+
+            // Add end point for point-to-point routes
+            if (routeType === 'point-to-point') {
+                const endLat = parseFloat(document.getElementById('endLat').value);
+                const endLng = parseFloat(document.getElementById('endLng').value);
+                if (isNaN(endLat) || isNaN(endLng)) throw new Error('Invalid end coordinates');
+                requestBody.end_point = {
+                    lat: endLat,
+                    lng: endLng
+                };
+            }
+
+            // Add preferences
+            const preferences = {};
+
+            // Get selected POI categories
+            const selectedCategories = [];
+            document.querySelectorAll('.checkbox-group input[type="checkbox"][value]').forEach(cb => {
+                if (cb.checked) selectedCategories.push(cb.value);
+            });
+            if (selectedCategories.length > 0) {
+                preferences.poi_categories = selectedCategories;
+            }
+
+            // Hidden gems preference
+            if (document.getElementById('hiddenGems').checked) {
+                preferences.hidden_gems = true;
+            }
+
+            if (Object.keys(preferences).length > 0) {
+                requestBody.preferences = preferences;
+            }
+
+            // Determine API endpoint
+            const endpoint = routeType === 'loop' ? '/routes/loop' : '/routes/point-to-point';
+            const url = `${apiEndpoint}${endpoint}`;
+
+            console.log('Calling API:', url, requestBody);
+
+            // Call the API
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`API error (${response.status}): ${errorText}`);
+            }
+
+            const data = await response.json();
+            console.log('API response:', data);
+
+            // Visualize the routes
+            currentRoutes = data.routes;
+
+            if (!currentRoutes || currentRoutes.length === 0) {
+                throw new Error('No routes returned from API');
+            }
+
+            // Show route info panel
+            displayRouteInfo();
+
+            // Display first route
+            displayRoute(0);
+
+            // Success message
+            errorMsg.className = '';
+            errorMsg.style.display = 'none';
+
+        } catch (error) {
+            console.error('Error:', error);
+            errorMsg.className = 'error';
+            errorMsg.textContent = error.message;
+            errorMsg.style.display = 'block';
+        } finally {
+            // Reset button state
+            btn.disabled = false;
+            btn.textContent = 'Generate Route';
+            controls.classList.remove('loading');
+        }
+    }
 
     function visualizeRoutes() {
         const input = document.getElementById('apiResponse').value;
