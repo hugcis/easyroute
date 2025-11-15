@@ -19,6 +19,14 @@ pub const MAX_ROUTE_GENERATION_RETRIES: usize = 5;
 pub const MIN_ALTERNATIVES_FOR_SUCCESS: u32 = 3; // Generate at least 3 alternatives
 pub const MAX_ALTERNATIVES_CLAMP: u32 = 5;
 
+// Adaptive tolerance for sparse POI areas
+pub const TOLERANCE_LEVEL_RELAXED: f64 = 0.2; // ±20%
+pub const TOLERANCE_LEVEL_VERY_RELAXED: f64 = 0.3; // ±30%
+
+// Geometric loop fallback configuration
+pub const GEOMETRIC_LOOP_NUM_WAYPOINTS: usize = 6; // Number of points around the circle
+pub const GEOMETRIC_LOOP_RADIUS_DIVISOR: f64 = std::f64::consts::TAU; // 2*PI for circle circumference
+
 // Distance calculation multipliers
 pub const DISTANCE_ADJUSTMENT_INITIAL_MULTIPLIER: f64 = 0.8;
 pub const DISTANCE_ADJUSTMENT_INITIAL_STEP: f64 = 0.2;

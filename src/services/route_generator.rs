@@ -30,6 +30,7 @@ impl RouteGenerator {
 
     /// Generate loop routes starting and ending at the same point
     /// Returns multiple alternative routes based on preferences
+    /// Implements adaptive tolerance: tries with normal tolerance first, then relaxes if needed
     pub async fn generate_loop_route(
         &self,
         start: Coordinates,
@@ -57,9 +58,12 @@ impl RouteGenerator {
             .await?;
 
         if raw_pois.is_empty() {
-            return Err(AppError::RouteGeneration(
-                "No POIs found in the area".to_string(),
-            ));
+            // Try geometric fallback if no POIs
+            tracing::warn!("No POIs found, attempting geometric loop fallback");
+            return self
+                .generate_geometric_loop(start, target_distance_km, mode)
+                .await
+                .map(|route| vec![route]);
         }
 
         // Step 2: Score and filter POIs
@@ -69,8 +73,76 @@ impl RouteGenerator {
 
         tracing::debug!("Found {} candidate POIs", candidate_pois.len());
 
-        // Step 3: Generate multiple route alternatives
-        // Use at least 3 attempts even if user requested 1, to increase success rate
+        // Step 3: Try with progressively relaxed tolerance levels
+        let tolerance_levels = vec![
+            (distance_tolerance, "normal"),
+            (
+                target_distance_km * TOLERANCE_LEVEL_RELAXED,
+                "relaxed (±20%)",
+            ),
+            (
+                target_distance_km * TOLERANCE_LEVEL_VERY_RELAXED,
+                "very relaxed (±30%)",
+            ),
+        ];
+
+        for (tolerance, tolerance_name) in tolerance_levels {
+            let routes = self
+                .try_generate_routes_with_tolerance(
+                    &start,
+                    target_distance_km,
+                    tolerance,
+                    mode,
+                    &candidate_pois,
+                    preferences,
+                )
+                .await;
+
+            if !routes.is_empty() {
+                if tolerance_name != "normal" {
+                    tracing::info!(
+                        "Successfully generated routes with {} tolerance",
+                        tolerance_name
+                    );
+                }
+                return Ok(routes);
+            }
+
+            if tolerance_name != "very relaxed (±30%)" {
+                tracing::warn!(
+                    "Failed with {} tolerance, trying next level",
+                    tolerance_name
+                );
+            }
+        }
+
+        // Step 4: Final fallback - geometric loop
+        if candidate_pois.len() < 2 {
+            tracing::warn!(
+                "Only {} POI(s) and no valid routes found, falling back to geometric loop",
+                candidate_pois.len()
+            );
+            return self
+                .generate_geometric_loop(start, target_distance_km, mode)
+                .await
+                .map(|route| vec![route]);
+        }
+
+        Err(AppError::RouteGeneration(
+            "Failed to generate any valid routes even with relaxed tolerance".to_string(),
+        ))
+    }
+
+    /// Try to generate routes with a specific tolerance level
+    async fn try_generate_routes_with_tolerance(
+        &self,
+        start: &Coordinates,
+        target_distance_km: f64,
+        distance_tolerance: f64,
+        mode: &TransportMode,
+        candidate_pois: &[Poi],
+        preferences: &RoutePreferences,
+    ) -> Vec<Route> {
         let max_alternatives = preferences
             .max_alternatives
             .clamp(MIN_ALTERNATIVES_FOR_SUCCESS, MAX_ALTERNATIVES_CLAMP)
@@ -80,11 +152,11 @@ impl RouteGenerator {
         for attempt in 0..max_alternatives {
             match self
                 .try_generate_loop(
-                    &start,
+                    start,
                     target_distance_km,
                     distance_tolerance,
                     mode,
-                    &candidate_pois,
+                    candidate_pois,
                     attempt,
                     preferences,
                 )
@@ -92,7 +164,7 @@ impl RouteGenerator {
             {
                 Ok(route) => routes.push(route),
                 Err(e) => {
-                    tracing::warn!(
+                    tracing::debug!(
                         "Failed to generate route alternative {}: {}",
                         attempt + 1,
                         e
@@ -101,26 +173,22 @@ impl RouteGenerator {
             }
         }
 
-        if routes.is_empty() {
-            return Err(AppError::RouteGeneration(
-                "Failed to generate any valid routes".to_string(),
-            ));
+        // Score and rank routes if we got any
+        if !routes.is_empty() {
+            for route in &mut routes {
+                route.score = self.calculate_route_score(route, target_distance_km, preferences);
+            }
+
+            routes.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            tracing::info!("Generated {} route alternatives", routes.len());
         }
 
-        // Step 4: Score and rank routes
-        let mut scored_routes = routes;
-        for route in &mut scored_routes {
-            route.score = self.calculate_route_score(route, target_distance_km, preferences);
-        }
-
-        scored_routes.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        tracing::info!("Generated {} route alternatives", scored_routes.len());
-        Ok(scored_routes)
+        routes
     }
 
     /// Calculate adjusted target distance based on retry attempt
@@ -458,6 +526,71 @@ impl RouteGenerator {
         }
 
         Ok(route)
+    }
+
+    /// Generate a geometric loop when POIs are unavailable
+    /// Creates a circular route using evenly distributed waypoints
+    async fn generate_geometric_loop(
+        &self,
+        start: Coordinates,
+        target_distance_km: f64,
+        mode: &TransportMode,
+    ) -> Result<Route> {
+        tracing::info!(
+            "Generating geometric loop (no POIs) for {}km route",
+            target_distance_km
+        );
+
+        // Calculate radius such that the circle circumference approximates target distance
+        // circumference = 2πr, so r = target_distance / (2π)
+        let radius_km = target_distance_km / GEOMETRIC_LOOP_RADIUS_DIVISOR;
+
+        // Convert radius to degrees (rough approximation: 1 degree ≈ 111km at equator)
+        // This is imprecise but good enough for generating waypoints
+        let radius_deg = radius_km / 111.0;
+
+        // Generate waypoints around a circle
+        let num_waypoints = GEOMETRIC_LOOP_NUM_WAYPOINTS;
+        let mut waypoints = vec![start]; // Start point
+
+        for i in 0..num_waypoints {
+            let angle = (i as f64 / num_waypoints as f64) * 2.0 * std::f64::consts::PI;
+            let lat_offset = radius_deg * angle.cos();
+            let lng_offset = radius_deg * angle.sin() / start.lat.to_radians().cos();
+
+            let waypoint_lat = start.lat + lat_offset;
+            let waypoint_lng = start.lng + lng_offset;
+
+            if let Ok(waypoint) = Coordinates::new(waypoint_lat, waypoint_lng) {
+                waypoints.push(waypoint);
+            }
+        }
+
+        waypoints.push(start); // Return to start
+
+        tracing::debug!(
+            "Generated geometric loop with {} waypoints (radius: {:.2}km)",
+            waypoints.len(),
+            radius_km
+        );
+
+        // Get directions from Mapbox to snap to actual roads
+        let directions = self.mapbox_client.get_directions(&waypoints, mode).await?;
+
+        tracing::info!(
+            "Geometric loop generated: {:.2}km (target: {}km)",
+            directions.distance_km(),
+            target_distance_km
+        );
+
+        // Build route without POIs
+        let path = directions.to_coordinates();
+        Ok(Route::new(
+            directions.distance_km(),
+            directions.duration_minutes(),
+            path,
+            vec![], // No POIs
+        ))
     }
 
     /// Calculate route quality score (0-10)
