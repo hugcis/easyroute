@@ -5,7 +5,9 @@ use crate::services::overpass::OverpassClient;
 use sqlx::PgPool;
 
 // POI service constants
-const POI_COUNT_MULTIPLIER: f64 = 2.5; // Multiplier for calculating minimum POI count based on radius
+// Increased multiplier to be more aggressive about querying Overpass
+// This ensures we have enough POIs for route generation in sparse areas
+const POI_COUNT_MULTIPLIER: f64 = 4.0; // Multiplier for calculating minimum POI count based on radius
 
 pub struct PoiService {
     db_pool: PgPool,
@@ -43,8 +45,9 @@ impl PoiService {
 
         // Calculate minimum POI count based on search area
         // Larger areas should have proportionally more POIs to justify skipping Overpass
-        // For 5km: ~12 POIs, for 10km: ~25 POIs, for 15km: ~37 POIs
-        let min_poi_count = ((radius_km * POI_COUNT_MULTIPLIER) as usize).clamp(10, 50);
+        // For 5km: ~20 POIs, for 10km: ~40 POIs, for 15km: ~50 POIs
+        // Higher threshold ensures we query Overpass in sparse areas
+        let min_poi_count = ((radius_km * POI_COUNT_MULTIPLIER) as usize).clamp(20, 50);
 
         // If we have enough POIs in database, use them
         if db_pois.len() >= limit.min(min_poi_count) {
