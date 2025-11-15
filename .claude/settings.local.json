@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "Bash(psql:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(curl:*)",
+      "WebSearch"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
