@@ -44,7 +44,7 @@ pub const VARIATION_MOD: usize = 100;
 pub const VARIATION_SCORE_FACTOR: f32 = 0.05;
 
 // Overpass API configuration
-pub const OVERPASS_QUERY_TIMEOUT_SECONDS: u64 = 60;
+pub const OVERPASS_QUERY_TIMEOUT_SECONDS: u64 = 30; // Reduced from 60s to fail faster and use batching
 pub const OVERPASS_RETRY_MAX_ATTEMPTS: usize = 2; // Total of 3 attempts (0, 1, 2)
 pub const OVERPASS_RETRY_EXTENDED_MAX_ATTEMPTS: usize = 2; // For single queries
 pub const OVERPASS_HTTP_TOO_MANY_REQUESTS: u16 = 429;

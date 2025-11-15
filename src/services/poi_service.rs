@@ -68,147 +68,137 @@ impl PoiService {
             .map(|c| c.to_vec())
             .unwrap_or_else(Self::default_categories);
 
-        // Strategy: Try single query first, fallback to batched on timeout
-        let single_query_result = self
-            .overpass_client
-            .query_pois(center, radius_meters, &categories_to_fetch)
+        // Strategy: Progressive radius reduction on timeout
+        // Try with full radius, then 75%, then 50% if queries keep timing out
+        let radius_attempts = [
+            (radius_meters, false),       // Full radius, single query
+            (radius_meters * 0.75, true), // 75% radius, batched
+            (radius_meters * 0.5, true),  // 50% radius, batched
+        ];
+
+        let mut last_error = None;
+
+        for (attempt_idx, (attempt_radius, use_batching)) in radius_attempts.iter().enumerate() {
+            if attempt_idx > 0 {
+                tracing::warn!(
+                    "Reducing search radius to {:.0}m ({}% of original) and retrying with batching",
+                    attempt_radius,
+                    (attempt_radius / radius_meters * 100.0) as u32
+                );
+            }
+
+            let query_result = if *use_batching {
+                self.overpass_client
+                    .query_pois_batched(center, *attempt_radius, &categories_to_fetch)
+                    .await
+            } else {
+                self.overpass_client
+                    .query_pois(center, *attempt_radius, &categories_to_fetch)
+                    .await
+            };
+
+            match query_result {
+                Ok(overpass_pois) if !overpass_pois.is_empty() => {
+                    // Success! Store and return
+                    self.store_pois_in_db(&overpass_pois).await;
+                    tracing::info!(
+                        "Fetched {} POIs from Overpass API (radius: {:.0}m, batched: {})",
+                        overpass_pois.len(),
+                        attempt_radius,
+                        use_batching
+                    );
+                    return Ok(overpass_pois.into_iter().take(limit).collect());
+                }
+                Ok(_) => {
+                    // Empty result - try next radius
+                    tracing::warn!("Query returned 0 POIs, trying smaller radius");
+                    continue;
+                }
+                Err(e) => {
+                    let error_str = e.to_string();
+                    let is_timeout = error_str.contains("timed out")
+                        || error_str.contains("timeout")
+                        || error_str.contains("504")
+                        || error_str.contains("too busy");
+
+                    if is_timeout && attempt_idx < radius_attempts.len() - 1 {
+                        // Timeout - try next smaller radius
+                        tracing::warn!(
+                            "Query timed out at {:.0}m radius, will try smaller radius",
+                            attempt_radius
+                        );
+                        last_error = Some(e);
+                        continue;
+                    } else {
+                        // Non-timeout error or last attempt failed
+                        last_error = Some(e);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // All attempts failed - fall back to database POIs
+        let final_error = last_error.unwrap_or_else(|| {
+            crate::error::AppError::OverpassApi("All radius attempts failed".to_string())
+        });
+
+        tracing::warn!(
+            "All Overpass attempts failed ({}), falling back to {} database POIs",
+            final_error,
+            db_pois.len()
+        );
+
+        if db_pois.is_empty() {
+            return Err(final_error);
+        }
+
+        Ok(db_pois.into_iter().take(limit).collect())
+    }
+
+    /// Helper method to store POIs in database with transaction
+    async fn store_pois_in_db(&self, pois: &[Poi]) {
+        if pois.is_empty() {
+            return;
+        }
+
+        let mut transaction = match self.db_pool.begin().await {
+            Ok(tx) => tx,
+            Err(e) => {
+                tracing::warn!("Failed to begin transaction for POI inserts: {}", e);
+                return;
+            }
+        };
+
+        let mut inserted_count = 0;
+        for poi in pois {
+            let result = sqlx::query(
+                r#"
+                INSERT INTO pois (id, name, category, location, popularity_score, description, estimated_visit_duration_minutes, osm_id)
+                VALUES ($1, $2, $3, ST_GeogFromText($4), $5, $6, $7, $8)
+                ON CONFLICT (osm_id) DO NOTHING
+                "#
+            )
+            .bind(poi.id)
+            .bind(&poi.name)
+            .bind(poi.category.to_string())
+            .bind(format!("POINT({} {})", poi.coordinates.lng, poi.coordinates.lat))
+            .bind(poi.popularity_score)
+            .bind(&poi.description)
+            .bind(poi.estimated_visit_duration_minutes.map(|d| d as i32))
+            .bind(poi.osm_id)
+            .execute(&mut *transaction)
             .await;
 
-        match single_query_result {
-            Ok(overpass_pois) => {
-                // Success! Store and return
-                // Use transaction for batch inserts to ensure atomicity
-                let mut transaction = match self.db_pool.begin().await {
-                    Ok(tx) => tx,
-                    Err(e) => {
-                        tracing::warn!("Failed to begin transaction for POI inserts: {}", e);
-                        // Continue without transaction - best effort insertion
-                        for poi in &overpass_pois {
-                            if let Err(e) = queries::insert_poi(&self.db_pool, poi).await {
-                                tracing::debug!("Failed to insert POI {}: {}", poi.name, e);
-                            }
-                        }
-                        tracing::info!(
-                            "Fetched {} POIs from Overpass API (single query)",
-                            overpass_pois.len()
-                        );
-                        return Ok(overpass_pois.into_iter().take(limit).collect());
-                    }
-                };
-
-                let mut inserted_count = 0;
-                for poi in &overpass_pois {
-                    // Use transaction instead of pool
-                    let result = sqlx::query(
-                        r#"
-                        INSERT INTO pois (id, name, category, location, popularity_score, description, estimated_visit_duration_minutes, osm_id)
-                        VALUES ($1, $2, $3, ST_GeogFromText($4), $5, $6, $7, $8)
-                        ON CONFLICT (osm_id) DO NOTHING
-                        "#
-                    )
-                    .bind(poi.id)
-                    .bind(&poi.name)
-                    .bind(poi.category.to_string())
-                    .bind(format!("POINT({} {})", poi.coordinates.lng, poi.coordinates.lat))
-                    .bind(poi.popularity_score)
-                    .bind(&poi.description)
-                    .bind(poi.estimated_visit_duration_minutes.map(|d| d as i32))
-                    .bind(poi.osm_id)
-                    .execute(&mut *transaction)
-                    .await;
-
-                    match result {
-                        Ok(_) => inserted_count += 1,
-                        Err(e) => tracing::debug!("Failed to insert POI {}: {}", poi.name, e),
-                    }
-                }
-
-                if let Err(e) = transaction.commit().await {
-                    tracing::warn!("Failed to commit POI transaction: {}", e);
-                } else {
-                    tracing::debug!("Inserted {} POIs in transaction", inserted_count);
-                }
-
-                tracing::info!(
-                    "Fetched {} POIs from Overpass API (single query)",
-                    overpass_pois.len()
-                );
-                Ok(overpass_pois.into_iter().take(limit).collect())
+            if result.is_ok() {
+                inserted_count += 1;
             }
-            Err(e) => {
-                let error_str = e.to_string();
-                let is_timeout = error_str.contains("timed out") || error_str.contains("timeout");
+        }
 
-                // On timeout, try batched parallel queries for resilience
-                if is_timeout && categories_to_fetch.len() > 3 {
-                    tracing::warn!(
-                        "Single query timed out, falling back to batched parallel queries"
-                    );
-
-                    match self
-                        .overpass_client
-                        .query_pois_batched(center, radius_meters, &categories_to_fetch)
-                        .await
-                    {
-                        Ok(batched_pois) => {
-                            // Store batched results using transaction
-                            if let Ok(mut tx) = self.db_pool.begin().await {
-                                let mut inserted = 0;
-                                for poi in &batched_pois {
-                                    let result = sqlx::query(
-                                        r#"
-                                        INSERT INTO pois (id, name, category, location, popularity_score, description, estimated_visit_duration_minutes, osm_id)
-                                        VALUES ($1, $2, $3, ST_GeogFromText($4), $5, $6, $7, $8)
-                                        ON CONFLICT (osm_id) DO NOTHING
-                                        "#
-                                    )
-                                    .bind(poi.id)
-                                    .bind(&poi.name)
-                                    .bind(poi.category.to_string())
-                                    .bind(format!("POINT({} {})", poi.coordinates.lng, poi.coordinates.lat))
-                                    .bind(poi.popularity_score)
-                                    .bind(&poi.description)
-                                    .bind(poi.estimated_visit_duration_minutes.map(|d| d as i32))
-                                    .bind(poi.osm_id)
-                                    .execute(&mut *tx)
-                                    .await;
-
-                                    if result.is_ok() {
-                                        inserted += 1;
-                                    }
-                                }
-                                let _ = tx.commit().await;
-                                tracing::debug!("Inserted {} POIs from batched query", inserted);
-                            }
-
-                            tracing::info!(
-                                "Fetched {} POIs from Overpass API (batched queries)",
-                                batched_pois.len()
-                            );
-                            return Ok(batched_pois.into_iter().take(limit).collect());
-                        }
-                        Err(batch_error) => {
-                            tracing::warn!(
-                                "Batched queries also failed ({}), using database fallback",
-                                batch_error
-                            );
-                        }
-                    }
-                }
-
-                // All Overpass attempts failed - fall back to database POIs
-                tracing::warn!(
-                    "Overpass API failed ({}), falling back to {} database POIs",
-                    e,
-                    db_pois.len()
-                );
-
-                if db_pois.is_empty() {
-                    return Err(e);
-                }
-
-                Ok(db_pois.into_iter().take(limit).collect())
-            }
+        if let Err(e) = transaction.commit().await {
+            tracing::warn!("Failed to commit POI transaction: {}", e);
+        } else {
+            tracing::debug!("Inserted {} POIs into database", inserted_count);
         }
     }
 
