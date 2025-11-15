@@ -1,7 +1,10 @@
 pub mod debug;
 pub mod loop_route;
 
-use axum::{routing::{get, post}, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use std::sync::Arc;
 
 use crate::AppState;

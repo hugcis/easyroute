@@ -80,7 +80,10 @@ impl PoiService {
                     }
                 }
 
-                tracing::info!("Fetched {} POIs from Overpass API (single query)", overpass_pois.len());
+                tracing::info!(
+                    "Fetched {} POIs from Overpass API (single query)",
+                    overpass_pois.len()
+                );
                 Ok(overpass_pois.into_iter().take(limit).collect())
             }
             Err(e) => {

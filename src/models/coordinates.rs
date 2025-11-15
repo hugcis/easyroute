@@ -9,10 +9,16 @@ pub struct Coordinates {
 impl Coordinates {
     pub fn new(lat: f64, lng: f64) -> Result<Self, String> {
         if !(-90.0..=90.0).contains(&lat) {
-            return Err(format!("Invalid latitude: {} (must be between -90 and 90)", lat));
+            return Err(format!(
+                "Invalid latitude: {} (must be between -90 and 90)",
+                lat
+            ));
         }
         if !(-180.0..=180.0).contains(&lng) {
-            return Err(format!("Invalid longitude: {} (must be between -180 and 180)", lng));
+            return Err(format!(
+                "Invalid longitude: {} (must be between -180 and 180)",
+                lng
+            ));
         }
         Ok(Coordinates { lat, lng })
     }
@@ -150,7 +156,10 @@ mod tests {
         // Point perpendicular to segment
         let perpendicular = Coordinates::new(48.8550, 2.3561).unwrap();
         let (dist, _t) = perpendicular.distance_to_segment(&p1, &p2);
-        assert!(dist > 0.0, "Perpendicular point should have non-zero distance");
+        assert!(
+            dist > 0.0,
+            "Perpendicular point should have non-zero distance"
+        );
     }
 
     #[test]

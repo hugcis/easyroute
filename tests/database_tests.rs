@@ -9,24 +9,9 @@ async fn test_insert_and_find_pois() {
     common::cleanup_test_db(&pool).await;
 
     // Create test POIs
-    let poi1 = common::create_test_poi(
-        "Eiffel Tower",
-        PoiCategory::Monument,
-        48.8584,
-        2.2945,
-    );
-    let poi2 = common::create_test_poi(
-        "Louvre Museum",
-        PoiCategory::Museum,
-        48.8606,
-        2.3376,
-    );
-    let poi3 = common::create_test_poi(
-        "Luxembourg Gardens",
-        PoiCategory::Park,
-        48.8462,
-        2.3372,
-    );
+    let poi1 = common::create_test_poi("Eiffel Tower", PoiCategory::Monument, 48.8584, 2.2945);
+    let poi2 = common::create_test_poi("Louvre Museum", PoiCategory::Museum, 48.8606, 2.3376);
+    let poi3 = common::create_test_poi("Luxembourg Gardens", PoiCategory::Park, 48.8462, 2.3372);
 
     // Insert POIs
     queries::insert_poi(&pool, &poi1).await.unwrap();
@@ -37,17 +22,18 @@ async fn test_insert_and_find_pois() {
     // Center point between all three POIs
     let center = Coordinates::new(48.8537, 2.3147).unwrap();
     let pois = queries::find_pois_within_radius(
-        &pool,
-        &center,
-        10000.0, // 10km radius to ensure we find all test POIs
-        None,
-        10,
+        &pool, &center, 10000.0, // 10km radius to ensure we find all test POIs
+        None, 10,
     )
     .await
     .unwrap();
 
     // Should find all three POIs
-    assert!(pois.len() >= 3, "Expected to find 3 POIs but got {}", pois.len());
+    assert!(
+        pois.len() >= 3,
+        "Expected to find 3 POIs but got {}",
+        pois.len()
+    );
 
     let poi_names: Vec<&str> = pois.iter().map(|p| p.name.as_str()).collect();
     assert!(
@@ -73,18 +59,9 @@ async fn test_find_pois_by_category() {
     common::cleanup_test_db(&pool).await;
 
     // Create POIs of different categories
-    let monument = common::create_test_poi(
-        "Arc de Triomphe",
-        PoiCategory::Monument,
-        48.8738,
-        2.2950,
-    );
-    let museum = common::create_test_poi(
-        "Musée d'Orsay",
-        PoiCategory::Museum,
-        48.8600,
-        2.3266,
-    );
+    let monument =
+        common::create_test_poi("Arc de Triomphe", PoiCategory::Monument, 48.8738, 2.2950);
+    let museum = common::create_test_poi("Musée d'Orsay", PoiCategory::Museum, 48.8600, 2.3266);
 
     queries::insert_poi(&pool, &monument).await.unwrap();
     queries::insert_poi(&pool, &museum).await.unwrap();
@@ -103,7 +80,10 @@ async fn test_find_pois_by_category() {
     .unwrap();
 
     // Should only find monuments
-    assert!(!pois.is_empty(), "Expected to find at least the monument POI");
+    assert!(
+        !pois.is_empty(),
+        "Expected to find at least the monument POI"
+    );
     assert!(
         pois.iter().all(|p| p.category == PoiCategory::Monument),
         "Expected all POIs to be monuments"
@@ -142,7 +122,10 @@ async fn test_spatial_distance_ordering() {
     if pois.len() >= 2 {
         let first_dist = center.distance_to(&pois[0].coordinates);
         let second_dist = center.distance_to(&pois[1].coordinates);
-        assert!(first_dist <= second_dist, "POIs should be ordered by distance");
+        assert!(
+            first_dist <= second_dist,
+            "POIs should be ordered by distance"
+        );
     }
 
     common::cleanup_test_db(&pool).await;

@@ -5,8 +5,9 @@ use uuid::Uuid;
 
 /// Setup test database connection
 pub async fn setup_test_db() -> PgPool {
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute".to_string());
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute".to_string()
+    });
 
     let pool = sqlx::PgPool::connect(&database_url)
         .await
@@ -48,12 +49,12 @@ pub fn get_test_config() -> Config {
     Config {
         host: "0.0.0.0".to_string(),
         port: 3000,
-        database_url: std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute".to_string()),
+        database_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute".to_string()
+        }),
         redis_url: std::env::var("REDIS_URL")
             .unwrap_or_else(|_| "redis://localhost:6379".to_string()),
-        mapbox_api_key: std::env::var("MAPBOX_API_KEY")
-            .unwrap_or_else(|_| "test_key".to_string()),
+        mapbox_api_key: std::env::var("MAPBOX_API_KEY").unwrap_or_else(|_| "test_key".to_string()),
         route_cache_ttl: 3600,
         poi_region_cache_ttl: 86400,
         snap_radius_m: 100.0,

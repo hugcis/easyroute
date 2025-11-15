@@ -10,7 +10,8 @@ async fn test_mapbox_walking_directions() {
         return;
     }
 
-    let api_key = std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY must be set for integration tests");
+    let api_key =
+        std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY must be set for integration tests");
     let client = MapboxClient::new(api_key);
 
     // Create a simple route: Eiffel Tower to Louvre
@@ -26,9 +27,18 @@ async fn test_mapbox_walking_directions() {
     assert!(result.is_ok(), "Mapbox API call should succeed");
 
     let directions = result.unwrap();
-    assert!(directions.distance_meters > 0.0, "Distance should be positive");
-    assert!(directions.duration_seconds > 0.0, "Duration should be positive");
-    assert!(!directions.geometry.is_empty(), "Geometry should not be empty");
+    assert!(
+        directions.distance_meters > 0.0,
+        "Distance should be positive"
+    );
+    assert!(
+        directions.duration_seconds > 0.0,
+        "Duration should be positive"
+    );
+    assert!(
+        !directions.geometry.is_empty(),
+        "Geometry should not be empty"
+    );
 
     // Rough sanity check: walking from Eiffel to Louvre should be ~3-5km
     let distance_km = directions.distance_km();
@@ -46,7 +56,8 @@ async fn test_mapbox_loop_route() {
         return;
     }
 
-    let api_key = std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY must be set for integration tests");
+    let api_key =
+        std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY must be set for integration tests");
     let client = MapboxClient::new(api_key);
 
     // Create a loop: Start -> POI1 -> POI2 -> Start
@@ -86,7 +97,8 @@ async fn test_mapbox_bike_mode() {
         return;
     }
 
-    let api_key = std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY must be set for integration tests");
+    let api_key =
+        std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY must be set for integration tests");
     let client = MapboxClient::new(api_key);
 
     let start = Coordinates::new(48.8566, 2.3522).unwrap();

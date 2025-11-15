@@ -22,7 +22,12 @@ async fn setup_test_app() -> axum::Router {
     let mapbox_client = MapboxClient::new(config.mapbox_api_key.clone());
     let poi_service = PoiService::new(pool.clone());
     let snapping_service = SnappingService::new(pool.clone());
-    let route_generator = RouteGenerator::new(mapbox_client, poi_service, snapping_service, config.snap_radius_m);
+    let route_generator = RouteGenerator::new(
+        mapbox_client,
+        poi_service,
+        snapping_service,
+        config.snap_radius_m,
+    );
 
     let state = Arc::new(AppState {
         db_pool: pool,

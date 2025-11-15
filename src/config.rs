@@ -22,12 +22,9 @@ impl Config {
                 .unwrap_or_else(|_| "3000".to_string())
                 .parse()
                 .map_err(|_| "Invalid PORT")?,
-            database_url: env::var("DATABASE_URL")
-                .map_err(|_| "DATABASE_URL must be set")?,
-            redis_url: env::var("REDIS_URL")
-                .map_err(|_| "REDIS_URL must be set")?,
-            mapbox_api_key: env::var("MAPBOX_API_KEY")
-                .map_err(|_| "MAPBOX_API_KEY must be set")?,
+            database_url: env::var("DATABASE_URL").map_err(|_| "DATABASE_URL must be set")?,
+            redis_url: env::var("REDIS_URL").map_err(|_| "REDIS_URL must be set")?,
+            mapbox_api_key: env::var("MAPBOX_API_KEY").map_err(|_| "MAPBOX_API_KEY must be set")?,
             route_cache_ttl: env::var("ROUTE_CACHE_TTL")
                 .unwrap_or_else(|_| "86400".to_string())
                 .parse()

@@ -16,19 +16,14 @@ async fn test_overpass_query_pois() {
     let center = Coordinates::new(48.8584, 2.2945).unwrap();
     let categories = vec![PoiCategory::Monument];
 
-    let result = client
-        .query_pois(&center, 1000.0, &categories)
-        .await;
+    let result = client.query_pois(&center, 1000.0, &categories).await;
 
     assert!(result.is_ok(), "Overpass query should succeed");
 
     let pois = result.unwrap();
 
     // Should find at least some monuments near Eiffel Tower
-    assert!(
-        !pois.is_empty(),
-        "Should find monuments near Eiffel Tower"
-    );
+    assert!(!pois.is_empty(), "Should find monuments near Eiffel Tower");
 
     // Verify POI structure
     for poi in &pois {
@@ -93,10 +88,7 @@ async fn test_overpass_osm_id_extraction() {
     if let Ok(pois) = result {
         // OSM IDs should be present for POIs from Overpass
         for poi in &pois {
-            assert!(
-                poi.osm_id.is_some(),
-                "POI from Overpass should have OSM ID"
-            );
+            assert!(poi.osm_id.is_some(), "POI from Overpass should have OSM ID");
             assert!(poi.osm_id.unwrap() > 0, "OSM ID should be positive");
         }
     }

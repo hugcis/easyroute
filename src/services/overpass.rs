@@ -6,8 +6,8 @@ use std::collections::{HashMap, HashSet};
 
 /// Primary Overpass API endpoints with automatic fallback
 const OVERPASS_ENDPOINTS: &[&str] = &[
-    "https://overpass-api.de/api/interpreter",                 // Official main endpoint
-    "https://overpass.private.coffee/api/interpreter",         // Community mirror
+    "https://overpass-api.de/api/interpreter", // Official main endpoint
+    "https://overpass.private.coffee/api/interpreter", // Community mirror
     "https://maps.mail.ru/osm/tools/overpass/api/interpreter", // Mail.ru mirror
 ];
 
@@ -31,7 +31,9 @@ impl OverpassClient {
 
     /// Get the next endpoint to try (round-robin)
     fn get_next_endpoint(&self) -> String {
-        let idx = self.current_endpoint_idx.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let idx = self
+            .current_endpoint_idx
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.endpoints[idx % self.endpoints.len()].clone()
     }
 
@@ -44,7 +46,8 @@ impl OverpassClient {
         radius_meters: f64,
         categories: &[PoiCategory],
     ) -> Result<Vec<Poi>> {
-        self.query_pois_internal(center, radius_meters, categories, false).await
+        self.query_pois_internal(center, radius_meters, categories, false)
+            .await
     }
 
     /// Query POIs using batched parallel requests for better resilience
@@ -56,7 +59,8 @@ impl OverpassClient {
         radius_meters: f64,
         categories: &[PoiCategory],
     ) -> Result<Vec<Poi>> {
-        self.query_pois_internal(center, radius_meters, categories, true).await
+        self.query_pois_internal(center, radius_meters, categories, true)
+            .await
     }
 
     /// Internal query method with optional batching
@@ -68,8 +72,13 @@ impl OverpassClient {
         use_batching: bool,
     ) -> Result<Vec<Poi>> {
         if use_batching && categories.len() > 3 {
-            tracing::info!("Using batched parallel queries for {} categories", categories.len());
-            return self.query_pois_batched_parallel(center, radius_meters, categories).await;
+            tracing::info!(
+                "Using batched parallel queries for {} categories",
+                categories.len()
+            );
+            return self
+                .query_pois_batched_parallel(center, radius_meters, categories)
+                .await;
         }
 
         // Single union query (standard approach)
@@ -137,10 +146,9 @@ impl OverpassClient {
             let status = response.status();
 
             if status.is_success() {
-                let api_response: OverpassResponse = response
-                    .json()
-                    .await
-                    .map_err(|e| AppError::OverpassApi(format!("Failed to parse response: {}", e)))?;
+                let api_response: OverpassResponse = response.json().await.map_err(|e| {
+                    AppError::OverpassApi(format!("Failed to parse response: {}", e))
+                })?;
 
                 return Ok(self.convert_elements_to_pois(api_response.elements));
             }
@@ -202,7 +210,9 @@ impl OverpassClient {
                     let result = self.execute_query_with_retry(query).await;
 
                     match &result {
-                        Ok(pois) => tracing::info!("Batch {} returned {} POIs", idx + 1, pois.len()),
+                        Ok(pois) => {
+                            tracing::info!("Batch {} returned {} POIs", idx + 1, pois.len())
+                        }
                         Err(e) => tracing::warn!("Batch {} failed: {}", idx + 1, e),
                     }
 
@@ -253,9 +263,7 @@ impl OverpassClient {
         );
 
         if successful_batches == 0 {
-            return Err(AppError::OverpassApi(
-                "All batches failed".to_string()
-            ));
+            return Err(AppError::OverpassApi("All batches failed".to_string()));
         }
 
         Ok(unique_pois)
@@ -265,21 +273,25 @@ impl OverpassClient {
     fn create_category_batches(&self, categories: &[PoiCategory]) -> Vec<Vec<PoiCategory>> {
         // Strategy: Group by semantic similarity to balance query complexity
 
-        let mut high_value = Vec::new();     // Tourist attractions, monuments
+        let mut high_value = Vec::new(); // Tourist attractions, monuments
         let mut nature_outdoor = Vec::new(); // Parks, waterfronts, nature
         let mut urban_cultural = Vec::new(); // Museums, plazas, urban POIs
 
         for category in categories {
             match category {
                 // High-value tourist attractions
-                PoiCategory::Monument | PoiCategory::Viewpoint |
-                PoiCategory::Castle | PoiCategory::Historic => {
+                PoiCategory::Monument
+                | PoiCategory::Viewpoint
+                | PoiCategory::Castle
+                | PoiCategory::Historic => {
                     high_value.push(category.clone());
                 }
 
                 // Nature and outdoor
-                PoiCategory::Park | PoiCategory::Waterfront |
-                PoiCategory::Waterfall | PoiCategory::NatureReserve => {
+                PoiCategory::Park
+                | PoiCategory::Waterfront
+                | PoiCategory::Waterfall
+                | PoiCategory::NatureReserve => {
                     nature_outdoor.push(category.clone());
                 }
 
@@ -314,7 +326,8 @@ impl OverpassClient {
         tracing::debug!(
             "Created {} batches: {}",
             batches.len(),
-            batches.iter()
+            batches
+                .iter()
                 .map(|b| format!("{} categories", b.len()))
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -383,10 +396,9 @@ impl OverpassClient {
 
             // Handle success
             if status.is_success() {
-                let api_response: OverpassResponse = response
-                    .json()
-                    .await
-                    .map_err(|e| AppError::OverpassApi(format!("Failed to parse response: {}", e)))?;
+                let api_response: OverpassResponse = response.json().await.map_err(|e| {
+                    AppError::OverpassApi(format!("Failed to parse response: {}", e))
+                })?;
 
                 return Ok(self.convert_elements_to_pois(api_response.elements));
             }
@@ -727,42 +739,22 @@ fn category_to_osm_tags(category: &PoiCategory) -> Vec<(&str, &str)> {
         ],
 
         // Architectural
-        PoiCategory::Church => vec![
-            ("amenity", "place_of_worship"),
-        ],
-        PoiCategory::Castle => vec![
-            ("historic", "castle"),
-        ],
-        PoiCategory::Bridge => vec![
-            ("man_made", "bridge"),
-        ],
-        PoiCategory::Tower => vec![
-            ("man_made", "tower"),
-        ],
+        PoiCategory::Church => vec![("amenity", "place_of_worship")],
+        PoiCategory::Castle => vec![("historic", "castle")],
+        PoiCategory::Bridge => vec![("man_made", "bridge")],
+        PoiCategory::Tower => vec![("man_made", "tower")],
 
         // Urban Interest
-        PoiCategory::Plaza => vec![
-            ("place", "square"),
-        ],
+        PoiCategory::Plaza => vec![("place", "square")],
         PoiCategory::Fountain => vec![("amenity", "fountain")],
-        PoiCategory::Market => vec![
-            ("amenity", "marketplace"),
-        ],
-        PoiCategory::Artwork => vec![
-            ("tourism", "artwork"),
-        ],
+        PoiCategory::Market => vec![("amenity", "marketplace")],
+        PoiCategory::Artwork => vec![("tourism", "artwork")],
         PoiCategory::Lighthouse => vec![("man_made", "lighthouse")],
 
         // Activity
-        PoiCategory::Winery => vec![
-            ("craft", "winery"),
-        ],
-        PoiCategory::Brewery => vec![
-            ("craft", "brewery"),
-        ],
-        PoiCategory::Theatre => vec![
-            ("amenity", "theatre"),
-        ],
+        PoiCategory::Winery => vec![("craft", "winery")],
+        PoiCategory::Brewery => vec![("craft", "brewery")],
+        PoiCategory::Theatre => vec![("amenity", "theatre")],
         PoiCategory::Library => vec![("amenity", "library")],
     }
 }
@@ -812,6 +804,9 @@ mod tests {
         assert!(query.contains("48.8566"));
         assert!(query.contains("2.3522"));
         // Verify correct Overpass syntax for tag values
-        assert!(query.contains(r#"["tourism"="monument"]"#) || query.contains(r#"["tourism"="memorial"]"#));
+        assert!(
+            query.contains(r#"["tourism"="monument"]"#)
+                || query.contains(r#"["tourism"="memorial"]"#)
+        );
     }
 }
