@@ -317,10 +317,11 @@ impl OverpassClient {
 
         // If we ended up with just one batch, split it
         if batches.len() == 1 && batches[0].len() > 4 {
-            let single = batches.pop().unwrap();
-            let mid = single.len() / 2;
-            batches.push(single[..mid].to_vec());
-            batches.push(single[mid..].to_vec());
+            if let Some(single) = batches.pop() {
+                let mid = single.len() / 2;
+                batches.push(single[..mid].to_vec());
+                batches.push(single[mid..].to_vec());
+            }
         }
 
         tracing::debug!(

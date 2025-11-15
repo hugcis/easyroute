@@ -5,6 +5,12 @@ use crate::services::poi_service::PoiService;
 use crate::services::snapping_service::SnappingService;
 use std::collections::HashSet;
 
+// Route generation constants
+const MIN_POI_DISTANCE_KM: f64 = 0.2;  // Minimum distance from start to POI
+const MIN_ANGLE_DIFF_TWO_POIS: f64 = 1.0;  // ~57 degrees in radians
+const MIN_ANGLE_DIFF_THREE_POIS: f64 = 1.047;  // ~60 degrees in radians
+const MAX_DISTANCE_RETRIES: usize = 5;  // Maximum attempts to achieve target distance
+
 pub struct RouteGenerator {
     mapbox_client: MapboxClient,
     poi_service: PoiService,
@@ -131,13 +137,10 @@ impl RouteGenerator {
         variation: usize,
         preferences: &RoutePreferences,
     ) -> Result<Route> {
-        // Maximum retry attempts to adjust distance
-        const MAX_RETRIES: usize = 5; // Increased from 3 to give more chances
-
         let min_distance = target_distance_km - distance_tolerance;
         let max_distance = target_distance_km + distance_tolerance;
 
-        for retry in 0..MAX_RETRIES {
+        for retry in 0..MAX_DISTANCE_RETRIES {
             // Adjust target distance based on previous attempts
             // First attempt: use target distance
             // Later attempts: adjust based on whether we were too long or too short
@@ -156,7 +159,7 @@ impl RouteGenerator {
                 start,
                 adjusted_target,
                 candidate_pois,
-                variation * MAX_RETRIES + retry, // Different seed each time
+                variation * MAX_DISTANCE_RETRIES + retry, // Different seed each time
             )?;
 
             // Build waypoint sequence: Start → POI1 → POI2 → [POI3] → Start
@@ -184,9 +187,8 @@ impl RouteGenerator {
             }
 
             // If not within tolerance, log and retry with different POIs
-            if retry < MAX_RETRIES - 1 {
-                let error_pct =
-                    (distance_km - target_distance_km).abs() / target_distance_km * 100.0;
+            if retry < MAX_DISTANCE_RETRIES - 1 {
+                let error_pct = (distance_km - target_distance_km).abs() / target_distance_km * 100.0;
                 tracing::debug!(
                     "Attempt {} failed: {}km outside tolerance ({}km - {}km), error: {:.1}%",
                     retry + 1,
@@ -201,7 +203,7 @@ impl RouteGenerator {
         // All retries exhausted
         Err(AppError::RouteGeneration(format!(
             "Could not achieve target distance after {} attempts with {} candidate POIs (wanted {}km ± {}km)",
-            MAX_RETRIES, candidate_pois.len(), target_distance_km, distance_tolerance
+            MAX_DISTANCE_RETRIES, candidate_pois.len(), target_distance_km, distance_tolerance
         )))
     }
 
@@ -243,8 +245,8 @@ impl RouteGenerator {
             .filter_map(|(idx, poi)| {
                 let dist = start.distance_to(&poi.coordinates);
 
-                // Skip POIs that are way too close (less than 200m)
-                if dist < 0.2 {
+                // Skip POIs that are too close to start
+                if dist < MIN_POI_DISTANCE_KM {
                     return None;
                 }
 
@@ -297,7 +299,7 @@ impl RouteGenerator {
                 .enumerate()
                 .filter_map(|(idx, poi)| {
                     let dist = start.distance_to(&poi.coordinates);
-                    if dist < 0.2 {
+                    if dist < MIN_POI_DISTANCE_KM {
                         return None; // Still skip very close POIs
                     }
                     let score = 1.0 / (dist as f32 + 1.0); // Closer = better
@@ -362,7 +364,11 @@ impl RouteGenerator {
             .collect();
 
         // Check minimum angle difference (should be at least 60 degrees for 3 POIs)
-        let min_angle_diff = if pois.len() == 2 { 1.0 } else { 1.047 }; // ~60 degrees in radians
+        let min_angle_diff = if pois.len() == 2 {
+            MIN_ANGLE_DIFF_TWO_POIS
+        } else {
+            MIN_ANGLE_DIFF_THREE_POIS
+        };
 
         for i in 0..angles.len() {
             for j in (i + 1)..angles.len() {
