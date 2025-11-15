@@ -397,7 +397,9 @@ impl OverpassClient {
             }
         }
 
-        query_parts.push(");out center;".to_string());
+        // Limit results to reduce server load and improve response time
+        // 200 results per query is more than enough for POI selection
+        query_parts.push(");out center 200;".to_string());
         query_parts.join("\n")
     }
 
