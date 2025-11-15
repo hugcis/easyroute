@@ -6,9 +6,9 @@ rust-version = "1.70"
 
 [dependencies]
 # Web framework
-axum = "0.7"
-tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -19,22 +19,22 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Database
-sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-native-tls", "macros", "uuid", "json", "time"] }
+sqlx = { version = "0.8", features = ["postgres", "runtime-tokio-native-tls", "macros", "uuid", "json", "time"] }
 
 # HTTP client
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.12", features = ["json"] }
 
 # Geospatial
-geo = "0.28"
+geo = "0.31"
 geojson = "0.24"
 
 # Caching
-redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+redis = { version = "0.32", features = ["tokio-comp", "connection-manager"] }
 
 # Utilities
 uuid = { version = "1", features = ["serde", "v4"] }
 dotenv = "0.15"
-thiserror = "1"
+thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 time = { version = "0.3", features = ["serde"] }
@@ -42,7 +42,7 @@ urlencoding = "2"
 
 [dev-dependencies]
 tokio-test = "0.4"
-tower = { version = "0.4", features = ["util"] }
+tower = { version = "0.5", features = ["util"] }
 serial_test = "3.0"
 
 [lib]
