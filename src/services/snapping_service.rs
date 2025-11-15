@@ -129,7 +129,5 @@ struct BoundingBox {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // Note: Tests requiring database connection are in integration tests
 }

@@ -31,14 +31,24 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-audit-
 
+      - name: Cache cargo-audit
+        uses: actions/cache@v4
+        id: cache-audit-scheduled
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: ${{ runner.os }}-cargo-audit-0.18
+
       - name: Install cargo-audit
-        run: cargo install cargo-audit
+        if: steps.cache-audit-scheduled.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --version 0.18
 
       - name: Run security audit
+        id: audit
         run: cargo audit
+        continue-on-error: true
 
       - name: Create issue if vulnerabilities found
-        if: failure()
+        if: steps.audit.outcome == 'failure'
         uses: actions/github-script@v7
         with:
           script: |
@@ -49,6 +59,7 @@ jobs:
               body: 'The daily security audit found vulnerabilities. Please check the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.',
               labels: ['security', 'dependencies']
             })
+        continue-on-error: true
 
   dependency-check:
     name: Check for Outdated Dependencies
@@ -61,8 +72,16 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache cargo-outdated
+        uses: actions/cache@v4
+        id: cache-outdated
+        with:
+          path: ~/.cargo/bin/cargo-outdated
+          key: ${{ runner.os }}-cargo-outdated-0.14
+
       - name: Install cargo-outdated
-        run: cargo install cargo-outdated
+        if: steps.cache-outdated.outputs.cache-hit != 'true'
+        run: cargo install cargo-outdated --version 0.14
 
       - name: Check for outdated dependencies
         run: cargo outdated --exit-code 1

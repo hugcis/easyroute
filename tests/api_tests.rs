@@ -156,6 +156,6 @@ async fn test_route_preferences_serialization() {
     assert_eq!(json["max_alternatives"], 5);
 
     let deserialized: RoutePreferences = serde_json::from_value(json).unwrap();
-    assert_eq!(deserialized.hidden_gems, true);
+    assert!(deserialized.hidden_gems);
     assert_eq!(deserialized.max_alternatives, 5);
 }

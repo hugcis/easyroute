@@ -227,7 +227,8 @@ async fn test_route_scoring_different_preferences() {
     let mapbox_key = std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY required");
     let mapbox_client = MapboxClient::new(mapbox_key);
     let poi_service = PoiService::new(pool.clone());
-    let route_generator = RouteGenerator::new(mapbox_client, poi_service);
+    let snapping_service = SnappingService::new(pool.clone());
+    let route_generator = RouteGenerator::new(mapbox_client, poi_service, snapping_service, 100.0);
 
     // Test with popular preference
     let popular_pref = RoutePreferences {

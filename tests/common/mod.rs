@@ -4,6 +4,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Setup test database connection
+#[allow(dead_code)]
 pub async fn setup_test_db() -> PgPool {
     let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
         "postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute".to_string()
@@ -23,6 +24,7 @@ pub async fn setup_test_db() -> PgPool {
 }
 
 /// Clean up test database - remove all test data
+#[allow(dead_code)]
 pub async fn cleanup_test_db(pool: &PgPool) {
     sqlx::query("TRUNCATE TABLE pois CASCADE")
         .execute(pool)
@@ -31,6 +33,7 @@ pub async fn cleanup_test_db(pool: &PgPool) {
 }
 
 /// Create a test POI
+#[allow(dead_code)]
 pub fn create_test_poi(name: &str, category: PoiCategory, lat: f64, lng: f64) -> Poi {
     Poi {
         id: Uuid::new_v4(),
@@ -45,6 +48,7 @@ pub fn create_test_poi(name: &str, category: PoiCategory, lat: f64, lng: f64) ->
 }
 
 /// Get test configuration
+#[allow(dead_code)]
 pub fn get_test_config() -> Config {
     Config {
         host: "0.0.0.0".to_string(),
@@ -62,6 +66,7 @@ pub fn get_test_config() -> Config {
 }
 
 /// Check if we should skip real API tests
+#[allow(dead_code)]
 pub fn should_skip_real_api_tests() -> bool {
     std::env::var("SKIP_REAL_API_TESTS").is_ok()
 }

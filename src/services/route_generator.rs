@@ -70,7 +70,7 @@ impl RouteGenerator {
 
         // Step 3: Generate multiple route alternatives
         // Use at least 3 attempts even if user requested 1, to increase success rate
-        let max_alternatives = preferences.max_alternatives.max(3).min(5) as usize;
+        let max_alternatives = preferences.max_alternatives.clamp(3, 5) as usize;
         let mut routes = Vec::new();
 
         for attempt in 0..max_alternatives {
@@ -120,6 +120,7 @@ impl RouteGenerator {
     }
 
     /// Try to generate a single loop route with selected waypoints
+    #[allow(clippy::too_many_arguments)]
     async fn try_generate_loop(
         &self,
         start: &Coordinates,
@@ -221,14 +222,12 @@ impl RouteGenerator {
 
         // Adjust number of waypoints based on available POIs AND target distance
         // Longer routes need more waypoints to fill the distance
-        let num_waypoints = if target_distance_km > 10.0 && pois.len() >= 6 {
-            3 // Use 3 waypoints for long routes with plenty of POIs
-        } else if target_distance_km > 5.0 && pois.len() >= 4 {
-            3 // Use 3 for medium routes if we have POIs
-        } else if pois.len() >= 3 {
-            2 // Use 2 waypoints for shorter routes
+        let num_waypoints = if (target_distance_km > 10.0 && pois.len() >= 6)
+            || (target_distance_km > 5.0 && pois.len() >= 4)
+        {
+            3 // Use 3 waypoints for longer routes with enough POIs
         } else {
-            2 // Minimum 2 waypoints
+            2 // Use 2 waypoints for shorter routes or limited POIs
         };
 
         // Target distance from start for waypoints
@@ -466,7 +465,7 @@ impl RouteGenerator {
         let diversity_score = (unique_categories.len() as f32 / 3.0).min(1.0);
         score += 2.0 * diversity_score;
 
-        score.max(0.0).min(10.0)
+        score.clamp(0.0, 10.0)
     }
 }
 
@@ -489,10 +488,6 @@ mod tests {
 
     #[test]
     fn test_route_scoring_logic() {
-        use crate::services::mapbox::MapboxClient;
-        use crate::services::poi_service::PoiService;
-        use sqlx::PgPool;
-
         // Create a mock generator for testing the scoring function
         // Note: This requires async, so we'll just test the logic in a simpler way
 

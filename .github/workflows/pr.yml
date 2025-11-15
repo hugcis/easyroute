@@ -94,8 +94,16 @@ jobs:
             ${{ runner.os }}-cargo-test-
             ${{ runner.os }}-cargo-
 
+      - name: Cache sqlx-cli
+        uses: actions/cache@v4
+        id: cache-sqlx-pr
+        with:
+          path: ~/.cargo/bin/sqlx
+          key: ${{ runner.os }}-sqlx-cli-0.7
+
       - name: Install sqlx-cli
-        run: cargo install sqlx-cli --no-default-features --features postgres
+        if: steps.cache-sqlx-pr.outputs.cache-hit != 'true'
+        run: cargo install sqlx-cli --no-default-features --features postgres --version 0.7
 
       - name: Run database migrations
         run: sqlx migrate run

@@ -62,7 +62,7 @@ async fn test_overpass_multiple_categories() {
     assert!(!pois.is_empty(), "Should find POIs in central Paris");
 
     // Check that we have different categories
-    let has_multiple_categories = pois
+    let _has_multiple_categories = pois
         .windows(2)
         .any(|window| window[0].category != window[1].category);
 
