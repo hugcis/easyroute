@@ -27,6 +27,7 @@ pub async fn find_pois_within_radius(
                 popularity_score,
                 description,
                 estimated_visit_duration_minutes,
+                osm_id,
                 ST_Distance(location, ST_GeogFromText($1)) as distance_meters
             FROM pois
             WHERE ST_DWithin(
@@ -57,6 +58,7 @@ pub async fn find_pois_within_radius(
                 popularity_score,
                 description,
                 estimated_visit_duration_minutes,
+                osm_id,
                 ST_Distance(location, ST_GeogFromText($1)) as distance_meters
             FROM pois
             WHERE ST_DWithin(
@@ -102,7 +104,8 @@ pub async fn find_pois_in_bbox(
                 ST_X(location::geometry) as lng,
                 popularity_score,
                 description,
-                estimated_visit_duration_minutes
+                estimated_visit_duration_minutes,
+                osm_id
             FROM pois
             WHERE ST_Y(location::geometry) BETWEEN $1 AND $2
             AND ST_X(location::geometry) BETWEEN $3 AND $4
@@ -129,7 +132,8 @@ pub async fn find_pois_in_bbox(
                 ST_X(location::geometry) as lng,
                 popularity_score,
                 description,
-                estimated_visit_duration_minutes
+                estimated_visit_duration_minutes,
+                osm_id
             FROM pois
             WHERE ST_Y(location::geometry) BETWEEN $1 AND $2
             AND ST_X(location::geometry) BETWEEN $3 AND $4
@@ -184,26 +188,60 @@ struct PoiRow {
     popularity_score: f32,
     description: Option<String>,
     estimated_visit_duration_minutes: Option<i32>,
+    osm_id: Option<i64>,
     #[allow(dead_code)]
     distance_meters: f64,
 }
 
 impl From<PoiRow> for Poi {
     fn from(row: PoiRow) -> Self {
+        // Parse category with warning on failure
+        let category = row.category.parse().unwrap_or_else(|_| {
+            tracing::warn!(
+                "Invalid POI category '{}' for POI '{}' (id: {}), defaulting to Historic",
+                row.category,
+                row.name,
+                row.id
+            );
+            PoiCategory::Historic
+        });
+
+        // Construct coordinates safely - they should always be valid from DB
+        // but we validate anyway for defense in depth
+        let coordinates = Coordinates::new(row.lat, row.lng).unwrap_or_else(|e| {
+            tracing::error!(
+                "Invalid coordinates for POI '{}' (id: {}): {}. Using fallback.",
+                row.name,
+                row.id,
+                e
+            );
+            // Fallback to null island (should never happen with proper DB constraints)
+            Coordinates { lat: 0.0, lng: 0.0 }
+        });
+
+        // Safely convert visit duration, rejecting negative values
+        let estimated_visit_duration_minutes = row.estimated_visit_duration_minutes.and_then(|d| {
+            if d >= 0 {
+                Some(d as u32)
+            } else {
+                tracing::warn!(
+                    "Negative visit duration {} for POI '{}', ignoring",
+                    d,
+                    row.name
+                );
+                None
+            }
+        });
+
         Poi {
             id: row.id,
             name: row.name,
-            category: row.category.parse().unwrap_or(PoiCategory::Historic),
-            coordinates: Coordinates {
-                lat: row.lat,
-                lng: row.lng,
-            },
+            category,
+            coordinates,
             popularity_score: row.popularity_score,
             description: row.description,
-            estimated_visit_duration_minutes: row
-                .estimated_visit_duration_minutes
-                .map(|d| d as u32),
-            osm_id: None, // Not fetched in query for now
+            estimated_visit_duration_minutes,
+            osm_id: row.osm_id,
         }
     }
 }
@@ -219,24 +257,56 @@ struct PoiRowSimple {
     popularity_score: f32,
     description: Option<String>,
     estimated_visit_duration_minutes: Option<i32>,
+    osm_id: Option<i64>,
 }
 
 impl From<PoiRowSimple> for Poi {
     fn from(row: PoiRowSimple) -> Self {
+        // Parse category with warning on failure
+        let category = row.category.parse().unwrap_or_else(|_| {
+            tracing::warn!(
+                "Invalid POI category '{}' for POI '{}' (id: {}), defaulting to Historic",
+                row.category,
+                row.name,
+                row.id
+            );
+            PoiCategory::Historic
+        });
+
+        // Construct coordinates safely
+        let coordinates = Coordinates::new(row.lat, row.lng).unwrap_or_else(|e| {
+            tracing::error!(
+                "Invalid coordinates for POI '{}' (id: {}): {}. Using fallback.",
+                row.name,
+                row.id,
+                e
+            );
+            Coordinates { lat: 0.0, lng: 0.0 }
+        });
+
+        // Safely convert visit duration
+        let estimated_visit_duration_minutes = row.estimated_visit_duration_minutes.and_then(|d| {
+            if d >= 0 {
+                Some(d as u32)
+            } else {
+                tracing::warn!(
+                    "Negative visit duration {} for POI '{}', ignoring",
+                    d,
+                    row.name
+                );
+                None
+            }
+        });
+
         Poi {
             id: row.id,
             name: row.name,
-            category: row.category.parse().unwrap_or(PoiCategory::Historic),
-            coordinates: Coordinates {
-                lat: row.lat,
-                lng: row.lng,
-            },
+            category,
+            coordinates,
             popularity_score: row.popularity_score,
             description: row.description,
-            estimated_visit_duration_minutes: row
-                .estimated_visit_duration_minutes
-                .map(|d| d as u32),
-            osm_id: None,
+            estimated_visit_duration_minutes,
+            osm_id: row.osm_id,
         }
     }
 }

@@ -56,8 +56,9 @@ pub fn get_test_config() -> Config {
         database_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
             "postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute".to_string()
         }),
-        redis_url: std::env::var("REDIS_URL")
-            .unwrap_or_else(|_| "redis://localhost:6379".to_string()),
+        redis_url: Some(
+            std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string()),
+        ),
         mapbox_api_key: std::env::var("MAPBOX_API_KEY").unwrap_or_else(|_| "test_key".to_string()),
         route_cache_ttl: 3600,
         poi_region_cache_ttl: 86400,

@@ -109,7 +109,16 @@ impl SnappingService {
         // Using conservative estimate for longitude at mid latitudes
         let lat_buffer = buffer_m / 111_000.0; // meters to degrees latitude
         let mid_lat = (min_lat + max_lat) / 2.0;
-        let lng_buffer = buffer_m / (111_000.0 * mid_lat.to_radians().cos()); // adjust for latitude
+
+        // Clamp mid_lat to avoid extreme values near poles (±85° is safe limit)
+        // At extreme latitudes, use a conservative fixed buffer instead
+        let lng_buffer = if mid_lat.abs() > 85.0 {
+            // Near poles: use same buffer as latitude (conservative)
+            lat_buffer
+        } else {
+            // Normal case: adjust for latitude
+            buffer_m / (111_000.0 * mid_lat.to_radians().cos())
+        };
 
         BoundingBox {
             min_lat: min_lat - lat_buffer,

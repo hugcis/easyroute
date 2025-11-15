@@ -4,6 +4,9 @@ use crate::models::{Coordinates, Poi, PoiCategory};
 use crate::services::overpass::OverpassClient;
 use sqlx::PgPool;
 
+// POI service constants
+const POI_COUNT_MULTIPLIER: f64 = 2.5; // Multiplier for calculating minimum POI count based on radius
+
 pub struct PoiService {
     db_pool: PgPool,
     overpass_client: OverpassClient,
@@ -41,7 +44,7 @@ impl PoiService {
         // Calculate minimum POI count based on search area
         // Larger areas should have proportionally more POIs to justify skipping Overpass
         // For 5km: ~12 POIs, for 10km: ~25 POIs, for 15km: ~37 POIs
-        let min_poi_count = ((radius_km * 2.5) as usize).clamp(10, 50);
+        let min_poi_count = ((radius_km * POI_COUNT_MULTIPLIER) as usize).clamp(10, 50);
 
         // If we have enough POIs in database, use them
         if db_pois.len() >= limit.min(min_poi_count) {
@@ -74,10 +77,56 @@ impl PoiService {
         match single_query_result {
             Ok(overpass_pois) => {
                 // Success! Store and return
-                for poi in &overpass_pois {
-                    if let Err(e) = queries::insert_poi(&self.db_pool, poi).await {
-                        tracing::debug!("Failed to insert POI {}: {}", poi.name, e);
+                // Use transaction for batch inserts to ensure atomicity
+                let mut transaction = match self.db_pool.begin().await {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        tracing::warn!("Failed to begin transaction for POI inserts: {}", e);
+                        // Continue without transaction - best effort insertion
+                        for poi in &overpass_pois {
+                            if let Err(e) = queries::insert_poi(&self.db_pool, poi).await {
+                                tracing::debug!("Failed to insert POI {}: {}", poi.name, e);
+                            }
+                        }
+                        tracing::info!(
+                            "Fetched {} POIs from Overpass API (single query)",
+                            overpass_pois.len()
+                        );
+                        return Ok(overpass_pois.into_iter().take(limit).collect());
                     }
+                };
+
+                let mut inserted_count = 0;
+                for poi in &overpass_pois {
+                    // Use transaction instead of pool
+                    let result = sqlx::query(
+                        r#"
+                        INSERT INTO pois (id, name, category, location, popularity_score, description, estimated_visit_duration_minutes, osm_id)
+                        VALUES ($1, $2, $3, ST_GeogFromText($4), $5, $6, $7, $8)
+                        ON CONFLICT (osm_id) DO NOTHING
+                        "#
+                    )
+                    .bind(poi.id)
+                    .bind(&poi.name)
+                    .bind(poi.category.to_string())
+                    .bind(format!("POINT({} {})", poi.coordinates.lng, poi.coordinates.lat))
+                    .bind(poi.popularity_score)
+                    .bind(&poi.description)
+                    .bind(poi.estimated_visit_duration_minutes.map(|d| d as i32))
+                    .bind(poi.osm_id)
+                    .execute(&mut *transaction)
+                    .await;
+
+                    match result {
+                        Ok(_) => inserted_count += 1,
+                        Err(e) => tracing::debug!("Failed to insert POI {}: {}", poi.name, e),
+                    }
+                }
+
+                if let Err(e) = transaction.commit().await {
+                    tracing::warn!("Failed to commit POI transaction: {}", e);
+                } else {
+                    tracing::debug!("Inserted {} POIs in transaction", inserted_count);
                 }
 
                 tracing::info!(
@@ -102,11 +151,34 @@ impl PoiService {
                         .await
                     {
                         Ok(batched_pois) => {
-                            // Store batched results
-                            for poi in &batched_pois {
-                                if let Err(e) = queries::insert_poi(&self.db_pool, poi).await {
-                                    tracing::debug!("Failed to insert POI {}: {}", poi.name, e);
+                            // Store batched results using transaction
+                            if let Ok(mut tx) = self.db_pool.begin().await {
+                                let mut inserted = 0;
+                                for poi in &batched_pois {
+                                    let result = sqlx::query(
+                                        r#"
+                                        INSERT INTO pois (id, name, category, location, popularity_score, description, estimated_visit_duration_minutes, osm_id)
+                                        VALUES ($1, $2, $3, ST_GeogFromText($4), $5, $6, $7, $8)
+                                        ON CONFLICT (osm_id) DO NOTHING
+                                        "#
+                                    )
+                                    .bind(poi.id)
+                                    .bind(&poi.name)
+                                    .bind(poi.category.to_string())
+                                    .bind(format!("POINT({} {})", poi.coordinates.lng, poi.coordinates.lat))
+                                    .bind(poi.popularity_score)
+                                    .bind(&poi.description)
+                                    .bind(poi.estimated_visit_duration_minutes.map(|d| d as i32))
+                                    .bind(poi.osm_id)
+                                    .execute(&mut *tx)
+                                    .await;
+
+                                    if result.is_ok() {
+                                        inserted += 1;
+                                    }
                                 }
+                                let _ = tx.commit().await;
+                                tracing::debug!("Inserted {} POIs from batched query", inserted);
                             }
 
                             tracing::info!(
