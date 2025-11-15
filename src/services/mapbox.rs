@@ -108,8 +108,8 @@ struct MapboxDirectionsApiResponse {
 
 #[derive(Debug, Deserialize)]
 struct MapboxRoute {
-    distance: f64,    // meters
-    duration: f64,    // seconds
+    distance: f64, // meters
+    duration: f64, // seconds
     geometry: MapboxGeometry,
 }
 

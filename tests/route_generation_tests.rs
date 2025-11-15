@@ -3,10 +3,12 @@ use easyroute::services::mapbox::MapboxClient;
 use easyroute::services::poi_service::PoiService;
 use easyroute::services::route_generator::RouteGenerator;
 use easyroute::services::snapping_service::SnappingService;
+use serial_test::serial;
 
 mod common;
 
 #[tokio::test]
+#[serial]
 async fn test_route_generation_with_database_pois() {
     if common::should_skip_real_api_tests() {
         println!("Skipping real API test");
@@ -23,9 +25,15 @@ async fn test_route_generation_with_database_pois() {
     let poi2 = common::create_test_poi("East POI", PoiCategory::Park, 48.8566, 2.3600);
     let poi3 = common::create_test_poi("West POI", PoiCategory::Museum, 48.8566, 2.3450);
 
-    easyroute::db::queries::insert_poi(&pool, &poi1).await.unwrap();
-    easyroute::db::queries::insert_poi(&pool, &poi2).await.unwrap();
-    easyroute::db::queries::insert_poi(&pool, &poi3).await.unwrap();
+    easyroute::db::queries::insert_poi(&pool, &poi1)
+        .await
+        .unwrap();
+    easyroute::db::queries::insert_poi(&pool, &poi2)
+        .await
+        .unwrap();
+    easyroute::db::queries::insert_poi(&pool, &poi3)
+        .await
+        .unwrap();
 
     // Create services
     let mapbox_key = std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY required");
@@ -51,7 +59,10 @@ async fn test_route_generation_with_database_pois() {
     assert!(!routes.is_empty(), "Should generate at least one route");
 
     let route = &routes[0];
-    assert!(route.distance_km > 0.0, "Route should have positive distance");
+    assert!(
+        route.distance_km > 0.0,
+        "Route should have positive distance"
+    );
     assert!(
         route.estimated_duration_minutes > 0,
         "Route should have duration"
@@ -70,6 +81,7 @@ async fn test_route_generation_with_database_pois() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_route_generation_distance_validation() {
     if common::should_skip_real_api_tests() {
         println!("Skipping real API test");
@@ -87,9 +99,15 @@ async fn test_route_generation_distance_validation() {
     let poi2 = common::create_test_poi("POI 2", PoiCategory::Park, 48.8566, 2.3650);
     let poi3 = common::create_test_poi("POI 3", PoiCategory::Museum, 48.8476, 2.3522);
 
-    easyroute::db::queries::insert_poi(&pool, &poi1).await.unwrap();
-    easyroute::db::queries::insert_poi(&pool, &poi2).await.unwrap();
-    easyroute::db::queries::insert_poi(&pool, &poi3).await.unwrap();
+    easyroute::db::queries::insert_poi(&pool, &poi1)
+        .await
+        .unwrap();
+    easyroute::db::queries::insert_poi(&pool, &poi2)
+        .await
+        .unwrap();
+    easyroute::db::queries::insert_poi(&pool, &poi3)
+        .await
+        .unwrap();
 
     let mapbox_key = std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY required");
     let mapbox_client = MapboxClient::new(mapbox_key);
@@ -110,8 +128,7 @@ async fn test_route_generation_distance_validation() {
             let target = 5.0;
             let tolerance = 1.0;
             assert!(
-                route.distance_km >= target - tolerance
-                    && route.distance_km <= target + tolerance,
+                route.distance_km >= target - tolerance && route.distance_km <= target + tolerance,
                 "Route distance should be within tolerance: got {}km, wanted {}±{}km",
                 route.distance_km,
                 target,
@@ -124,6 +141,7 @@ async fn test_route_generation_distance_validation() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_route_poi_ordering() {
     if common::should_skip_real_api_tests() {
         println!("Skipping real API test");
@@ -138,8 +156,12 @@ async fn test_route_poi_ordering() {
     let poi1 = common::create_test_poi("POI 1", PoiCategory::Monument, 48.8600, 2.3522);
     let poi2 = common::create_test_poi("POI 2", PoiCategory::Park, 48.8566, 2.3600);
 
-    easyroute::db::queries::insert_poi(&pool, &poi1).await.unwrap();
-    easyroute::db::queries::insert_poi(&pool, &poi2).await.unwrap();
+    easyroute::db::queries::insert_poi(&pool, &poi1)
+        .await
+        .unwrap();
+    easyroute::db::queries::insert_poi(&pool, &poi2)
+        .await
+        .unwrap();
 
     let mapbox_key = std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY required");
     let mapbox_client = MapboxClient::new(mapbox_key);
@@ -181,6 +203,7 @@ async fn test_route_poi_ordering() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_route_scoring_different_preferences() {
     if common::should_skip_real_api_tests() {
         println!("Skipping real API test");
@@ -199,13 +222,18 @@ async fn test_route_scoring_different_preferences() {
     let mut hidden = common::create_test_poi("Hidden Gem", PoiCategory::Park, 48.8566, 2.3600);
     hidden.popularity_score = 20.0;
 
-    easyroute::db::queries::insert_poi(&pool, &popular).await.unwrap();
-    easyroute::db::queries::insert_poi(&pool, &hidden).await.unwrap();
+    easyroute::db::queries::insert_poi(&pool, &popular)
+        .await
+        .unwrap();
+    easyroute::db::queries::insert_poi(&pool, &hidden)
+        .await
+        .unwrap();
 
     let mapbox_key = std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY required");
     let mapbox_client = MapboxClient::new(mapbox_key);
     let poi_service = PoiService::new(pool.clone());
-    let route_generator = RouteGenerator::new(mapbox_client, poi_service);
+    let snapping_service = SnappingService::new(pool.clone());
+    let route_generator = RouteGenerator::new(mapbox_client, poi_service, snapping_service, 100.0);
 
     // Test with popular preference
     let popular_pref = RoutePreferences {

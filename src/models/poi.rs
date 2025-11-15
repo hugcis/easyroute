@@ -168,8 +168,14 @@ mod tests {
 
     #[test]
     fn test_poi_category_parsing() {
-        assert_eq!("monument".parse::<PoiCategory>().unwrap(), PoiCategory::Monument);
-        assert_eq!("VIEWPOINT".parse::<PoiCategory>().unwrap(), PoiCategory::Viewpoint);
+        assert_eq!(
+            "monument".parse::<PoiCategory>().unwrap(),
+            PoiCategory::Monument
+        );
+        assert_eq!(
+            "VIEWPOINT".parse::<PoiCategory>().unwrap(),
+            PoiCategory::Viewpoint
+        );
         assert!("invalid".parse::<PoiCategory>().is_err());
     }
 
@@ -183,6 +189,6 @@ mod tests {
         );
 
         assert_eq!(poi.quality_score(false), 95.0); // Popular
-        assert_eq!(poi.quality_score(true), 5.0);   // Hidden gem (inverted)
+        assert_eq!(poi.quality_score(true), 5.0); // Hidden gem (inverted)
     }
 }

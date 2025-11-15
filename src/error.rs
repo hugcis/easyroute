@@ -60,16 +60,12 @@ impl IntoResponse for AppError {
                 tracing::warn!("Cache error: {}", e);
                 (StatusCode::INTERNAL_SERVER_ERROR, "Cache error")
             }
-            AppError::InvalidRequest(ref e) => {
-                (StatusCode::BAD_REQUEST, e.as_str())
-            }
+            AppError::InvalidRequest(ref e) => (StatusCode::BAD_REQUEST, e.as_str()),
             AppError::RouteGeneration(ref e) => {
                 tracing::warn!("Route generation failed: {}", e);
                 (StatusCode::INTERNAL_SERVER_ERROR, e.as_str())
             }
-            AppError::NotFound(ref e) => {
-                (StatusCode::NOT_FOUND, e.as_str())
-            }
+            AppError::NotFound(ref e) => (StatusCode::NOT_FOUND, e.as_str()),
             AppError::Internal(ref e) => {
                 tracing::error!("Internal error: {}", e);
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")

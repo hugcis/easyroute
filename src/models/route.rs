@@ -146,7 +146,9 @@ impl LoopRouteRequest {
             return Err("distance_km must be between 0.5 and 50".to_string());
         }
         if self.distance_tolerance < 0.0 || self.distance_tolerance > self.distance_km {
-            return Err("distance_tolerance must be positive and less than distance_km".to_string());
+            return Err(
+                "distance_tolerance must be positive and less than distance_km".to_string(),
+            );
         }
         Ok(())
     }

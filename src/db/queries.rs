@@ -14,9 +14,7 @@ pub async fn find_pois_within_radius(
     let point_wkt = format!("POINT({} {})", center.lng, center.lat);
 
     let query = if let Some(cats) = categories {
-        let category_strs: Vec<String> = cats.iter()
-            .map(|c| c.to_string())
-            .collect();
+        let category_strs: Vec<String> = cats.iter().map(|c| c.to_string()).collect();
 
         sqlx::query_as::<_, PoiRow>(
             r#"
@@ -39,7 +37,7 @@ pub async fn find_pois_within_radius(
             AND category = ANY($3)
             ORDER BY distance_meters
             LIMIT $4
-            "#
+            "#,
         )
         .bind(&point_wkt)
         .bind(radius_meters)
@@ -68,7 +66,7 @@ pub async fn find_pois_within_radius(
             )
             ORDER BY distance_meters
             LIMIT $3
-            "#
+            "#,
         )
         .bind(&point_wkt)
         .bind(radius_meters)
@@ -92,9 +90,7 @@ pub async fn find_pois_in_bbox(
     limit: i64,
 ) -> Result<Vec<Poi>, sqlx::Error> {
     let query = if let Some(cats) = categories {
-        let category_strs: Vec<String> = cats.iter()
-            .map(|c| c.to_string())
-            .collect();
+        let category_strs: Vec<String> = cats.iter().map(|c| c.to_string()).collect();
 
         sqlx::query_as::<_, PoiRowSimple>(
             r#"
@@ -112,7 +108,7 @@ pub async fn find_pois_in_bbox(
             AND ST_X(location::geometry) BETWEEN $3 AND $4
             AND category = ANY($5)
             LIMIT $6
-            "#
+            "#,
         )
         .bind(min_lat)
         .bind(max_lat)
@@ -138,7 +134,7 @@ pub async fn find_pois_in_bbox(
             WHERE ST_Y(location::geometry) BETWEEN $1 AND $2
             AND ST_X(location::geometry) BETWEEN $3 AND $4
             LIMIT $5
-            "#
+            "#,
         )
         .bind(min_lat)
         .bind(max_lat)
@@ -153,10 +149,7 @@ pub async fn find_pois_in_bbox(
 }
 
 /// Insert a POI into the database
-pub async fn insert_poi(
-    pool: &PgPool,
-    poi: &Poi,
-) -> Result<Uuid, sqlx::Error> {
+pub async fn insert_poi(pool: &PgPool, poi: &Poi) -> Result<Uuid, sqlx::Error> {
     let point_wkt = format!("POINT({} {})", poi.coordinates.lng, poi.coordinates.lat);
 
     let result: (Uuid,) = sqlx::query_as(
@@ -207,7 +200,9 @@ impl From<PoiRow> for Poi {
             },
             popularity_score: row.popularity_score,
             description: row.description,
-            estimated_visit_duration_minutes: row.estimated_visit_duration_minutes.map(|d| d as u32),
+            estimated_visit_duration_minutes: row
+                .estimated_visit_duration_minutes
+                .map(|d| d as u32),
             osm_id: None, // Not fetched in query for now
         }
     }
@@ -238,7 +233,9 @@ impl From<PoiRowSimple> for Poi {
             },
             popularity_score: row.popularity_score,
             description: row.description,
-            estimated_visit_duration_minutes: row.estimated_visit_duration_minutes.map(|d| d as u32),
+            estimated_visit_duration_minutes: row
+                .estimated_visit_duration_minutes
+                .map(|d| d as u32),
             osm_id: None,
         }
     }

@@ -1,7 +1,5 @@
 use crate::error::{AppError, Result};
-use crate::models::{
-    Coordinates, Poi, Route, RoutePreferences, RoutePoi, TransportMode,
-};
+use crate::models::{Coordinates, Poi, Route, RoutePoi, RoutePreferences, TransportMode};
 use crate::services::mapbox::{DirectionsResponse, MapboxClient};
 use crate::services::poi_service::PoiService;
 use crate::services::snapping_service::SnappingService;
@@ -64,17 +62,15 @@ impl RouteGenerator {
         }
 
         // Step 2: Score and filter POIs
-        let candidate_pois = self.poi_service.score_and_filter_pois(
-            raw_pois,
-            preferences.hidden_gems,
-            20,
-        );
+        let candidate_pois =
+            self.poi_service
+                .score_and_filter_pois(raw_pois, preferences.hidden_gems, 20);
 
         tracing::debug!("Found {} candidate POIs", candidate_pois.len());
 
         // Step 3: Generate multiple route alternatives
         // Use at least 3 attempts even if user requested 1, to increase success rate
-        let max_alternatives = preferences.max_alternatives.max(3).min(5) as usize;
+        let max_alternatives = preferences.max_alternatives.clamp(3, 5) as usize;
         let mut routes = Vec::new();
 
         for attempt in 0..max_alternatives {
@@ -92,7 +88,11 @@ impl RouteGenerator {
             {
                 Ok(route) => routes.push(route),
                 Err(e) => {
-                    tracing::warn!("Failed to generate route alternative {}: {}", attempt + 1, e);
+                    tracing::warn!(
+                        "Failed to generate route alternative {}: {}",
+                        attempt + 1,
+                        e
+                    );
                 }
             }
         }
@@ -120,6 +120,7 @@ impl RouteGenerator {
     }
 
     /// Try to generate a single loop route with selected waypoints
+    #[allow(clippy::too_many_arguments)]
     async fn try_generate_loop(
         &self,
         start: &Coordinates,
@@ -163,10 +164,7 @@ impl RouteGenerator {
             waypoints.extend(selected_pois.iter().map(|p| p.coordinates));
             waypoints.push(*start); // Return to start
 
-            let directions = self
-                .mapbox_client
-                .get_directions(&waypoints, mode)
-                .await?;
+            let directions = self.mapbox_client.get_directions(&waypoints, mode).await?;
 
             let distance_km = directions.distance_km();
 
@@ -180,12 +178,15 @@ impl RouteGenerator {
                     target_distance_km,
                     distance_tolerance
                 );
-                return self.build_route(directions, selected_pois, preferences).await;
+                return self
+                    .build_route(directions, selected_pois, preferences)
+                    .await;
             }
 
             // If not within tolerance, log and retry with different POIs
             if retry < MAX_RETRIES - 1 {
-                let error_pct = (distance_km - target_distance_km).abs() / target_distance_km * 100.0;
+                let error_pct =
+                    (distance_km - target_distance_km).abs() / target_distance_km * 100.0;
                 tracing::debug!(
                     "Attempt {} failed: {}km outside tolerance ({}km - {}km), error: {:.1}%",
                     retry + 1,
@@ -221,14 +222,12 @@ impl RouteGenerator {
 
         // Adjust number of waypoints based on available POIs AND target distance
         // Longer routes need more waypoints to fill the distance
-        let num_waypoints = if target_distance_km > 10.0 && pois.len() >= 6 {
-            3  // Use 3 waypoints for long routes with plenty of POIs
-        } else if target_distance_km > 5.0 && pois.len() >= 4 {
-            3  // Use 3 for medium routes if we have POIs
-        } else if pois.len() >= 3 {
-            2  // Use 2 waypoints for shorter routes
+        let num_waypoints = if (target_distance_km > 10.0 && pois.len() >= 6)
+            || (target_distance_km > 5.0 && pois.len() >= 4)
+        {
+            3 // Use 3 waypoints for longer routes with enough POIs
         } else {
-            2  // Minimum 2 waypoints
+            2 // Use 2 waypoints for shorter routes or limited POIs
         };
 
         // Target distance from start for waypoints
@@ -286,9 +285,10 @@ impl RouteGenerator {
             );
 
             if pois.len() < 2 {
-                return Err(AppError::RouteGeneration(
-                    format!("Not enough POIs in area (found {}, need at least 2)", pois.len()),
-                ));
+                return Err(AppError::RouteGeneration(format!(
+                    "Not enough POIs in area (found {}, need at least 2)",
+                    pois.len()
+                )));
             }
 
             // Fallback: use the closest POIs we have, regardless of ideal distance
@@ -319,7 +319,7 @@ impl RouteGenerator {
 
         let selected: Vec<Poi> = scored_pois
             .iter()
-            .skip(skip_count)  // Skip different POIs based on variation!
+            .skip(skip_count) // Skip different POIs based on variation!
             .take(num_waypoints)
             .map(|(_, poi)| (*poi).clone())
             .collect();
@@ -329,7 +329,11 @@ impl RouteGenerator {
             selected.len(),
             variation,
             skip_count,
-            selected.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", ")
+            selected
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
 
         // Ensure spatial distribution by checking angles from start
@@ -457,15 +461,11 @@ impl RouteGenerator {
         }
 
         // 4. Category diversity (0-2 points)
-        let unique_categories: HashSet<_> = route
-            .pois
-            .iter()
-            .map(|rp| &rp.poi.category)
-            .collect();
+        let unique_categories: HashSet<_> = route.pois.iter().map(|rp| &rp.poi.category).collect();
         let diversity_score = (unique_categories.len() as f32 / 3.0).min(1.0);
         score += 2.0 * diversity_score;
 
-        score.max(0.0).min(10.0)
+        score.clamp(0.0, 10.0)
     }
 }
 
@@ -488,10 +488,6 @@ mod tests {
 
     #[test]
     fn test_route_scoring_logic() {
-        use crate::services::mapbox::MapboxClient;
-        use crate::services::poi_service::PoiService;
-        use sqlx::PgPool;
-
         // Create a mock generator for testing the scoring function
         // Note: This requires async, so we'll just test the logic in a simpler way
 

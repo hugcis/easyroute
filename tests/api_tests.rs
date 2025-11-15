@@ -22,7 +22,12 @@ async fn setup_test_app() -> axum::Router {
     let mapbox_client = MapboxClient::new(config.mapbox_api_key.clone());
     let poi_service = PoiService::new(pool.clone());
     let snapping_service = SnappingService::new(pool.clone());
-    let route_generator = RouteGenerator::new(mapbox_client, poi_service, snapping_service, config.snap_radius_m);
+    let route_generator = RouteGenerator::new(
+        mapbox_client,
+        poi_service,
+        snapping_service,
+        config.snap_radius_m,
+    );
 
     let state = Arc::new(AppState {
         db_pool: pool,
@@ -151,6 +156,6 @@ async fn test_route_preferences_serialization() {
     assert_eq!(json["max_alternatives"], 5);
 
     let deserialized: RoutePreferences = serde_json::from_value(json).unwrap();
-    assert_eq!(deserialized.hidden_gems, true);
+    assert!(deserialized.hidden_gems);
     assert_eq!(deserialized.max_alternatives, 5);
 }

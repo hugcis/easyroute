@@ -41,7 +41,7 @@ impl PoiService {
         // Calculate minimum POI count based on search area
         // Larger areas should have proportionally more POIs to justify skipping Overpass
         // For 5km: ~12 POIs, for 10km: ~25 POIs, for 15km: ~37 POIs
-        let min_poi_count = ((radius_km * 2.5) as usize).max(10).min(50);
+        let min_poi_count = ((radius_km * 2.5) as usize).clamp(10, 50);
 
         // If we have enough POIs in database, use them
         if db_pois.len() >= limit.min(min_poi_count) {
@@ -63,7 +63,7 @@ impl PoiService {
 
         let categories_to_fetch = categories
             .map(|c| c.to_vec())
-            .unwrap_or_else(|| Self::default_categories());
+            .unwrap_or_else(Self::default_categories);
 
         // Strategy: Try single query first, fallback to batched on timeout
         let single_query_result = self
@@ -80,7 +80,10 @@ impl PoiService {
                     }
                 }
 
-                tracing::info!("Fetched {} POIs from Overpass API (single query)", overpass_pois.len());
+                tracing::info!(
+                    "Fetched {} POIs from Overpass API (single query)",
+                    overpass_pois.len()
+                );
                 Ok(overpass_pois.into_iter().take(limit).collect())
             }
             Err(e) => {
@@ -181,8 +184,6 @@ impl PoiService {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // Tests removed for now - need async test setup
 }
 

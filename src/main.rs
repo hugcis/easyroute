@@ -1,10 +1,10 @@
+use axum::Router;
 use easyroute::config::Config;
 use easyroute::services::mapbox::MapboxClient;
 use easyroute::services::poi_service::PoiService;
 use easyroute::services::route_generator::RouteGenerator;
 use easyroute::services::snapping_service::SnappingService;
 use easyroute::AppState;
-use axum::Router;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
@@ -22,8 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     // Load configuration
-    let config = Config::from_env()
-        .map_err(|e| format!("Failed to load configuration: {}", e))?;
+    let config = Config::from_env().map_err(|e| format!("Failed to load configuration: {}", e))?;
 
     tracing::info!("Starting EasyRoute API server");
     tracing::info!("Configuration loaded successfully");
@@ -35,9 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Run migrations
     tracing::info!("Running database migrations...");
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await?;
+    sqlx::migrate!("./migrations").run(&db_pool).await?;
     tracing::info!("Database migrations completed");
 
     // Initialize services
