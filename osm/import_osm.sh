@@ -121,60 +121,71 @@ POI_COUNT_BEFORE=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" 
 echo -e "${GREEN}pois table found (current count: ${POI_COUNT_BEFORE// /})${NC}"
 echo ""
 
-# Run osm2pgsql
-echo -e "${BLUE}Running osm2pgsql...${NC}"
-echo -e "${YELLOW}This may take a while depending on file size...${NC}"
-echo ""
-
-# Build osm2pgsql command
-# Note: We use slim mode for updates, and output=flex for Lua style
-# We use --append mode to preserve the existing table structure from migrations
-OSM2PGSQL_CMD="osm2pgsql \
-    --append \
-    --output=flex \
-    --style=$STYLE_FILE \
-    --database=$DB_NAME \
-    --username=$DB_USER \
-    --host=$DB_HOST \
-    --port=$DB_PORT \
-    --cache=$OSM2PGSQL_CACHE \
-    --number-processes=$OSM2PGSQL_PROCESSES \
-    --slim \
-    $PBF_FILE"
-
-# Check if osm2pgsql is available
-if command -v osm2pgsql &> /dev/null; then
-    # Run locally
-    echo -e "${GREEN}Using local osm2pgsql installation${NC}"
-    echo ""
-    eval "$OSM2PGSQL_CMD"
-else
-    # Run via Docker
-    echo -e "${GREEN}Using Docker osm2pgsql (local installation not found)${NC}"
+    # Check if osm2pgsql_properties table exists
+    echo -e "${BLUE}Checking osm2pgsql_properties table...${NC}"
+    if ! psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1 FROM osm2pgsql_properties LIMIT 1" > /dev/null 2>&1; then
+        echo -e "${YELLOW}osm2pgsql_properties table not found. Using create mode...${NC}"
+        MODE="create"
+        OSM2PGSQL_MODE_FLAG="--create"
+    else
+        echo -e "${GREEN}osm2pgsql_properties table found${NC}"
+    fi
     echo ""
 
-    # Get absolute paths for Docker volume mounts
-    ABS_PBF_FILE=$(realpath "$PBF_FILE")
-    ABS_STYLE_FILE=$(realpath "$STYLE_FILE")
+    # Run osm2pgsql
+    echo -e "${BLUE}Running osm2pgsql...${NC}"
+    echo -e "${YELLOW}This may take a while depending on file size...${NC}"
+    echo ""
 
-    docker run --rm \
-        --network host \
-        -v "$ABS_PBF_FILE:/data/input.osm.pbf:ro" \
-        -v "$ABS_STYLE_FILE:/style.lua:ro" \
-        -e PGPASSWORD="$DB_PASSWORD" \
-        ghcr.io/openstreetmap/osm2pgsql:latest \
-        --append \
+    # Build osm2pgsql command
+    # Note: We use slim mode for updates, and output=flex for Lua style
+    # We use --append mode to preserve the existing table structure from migrations
+    OSM2PGSQL_CMD="osm2pgsql \
+        $OSM2PGSQL_MODE_FLAG \
         --output=flex \
-        --style=/style.lua \
-        --database="$DB_NAME" \
-        --username="$DB_USER" \
-        --host="$DB_HOST" \
-        --port="$DB_PORT" \
-        --cache="$OSM2PGSQL_CACHE" \
-        --number-processes="$OSM2PGSQL_PROCESSES" \
+        --style=$STYLE_FILE \
+        --database=$DB_NAME \
+        --username=$DB_USER \
+        --host=$DB_HOST \
+        --port=$DB_PORT \
+        --cache=$OSM2PGSQL_CACHE \
+        --number-processes=$OSM2PGSQL_PROCESSES \
         --slim \
-        /data/input.osm.pbf
-fi
+        $PBF_FILE"
+
+    # Check if osm2pgsql is available
+    if command -v osm2pgsql &> /dev/null; then
+        # Run locally
+        echo -e "${GREEN}Using local osm2pgsql installation${NC}"
+        echo ""
+        eval "$OSM2PGSQL_CMD"
+    else
+        # Run via Docker
+        echo -e "${GREEN}Using Docker osm2pgsql (local installation not found)${NC}"
+        echo ""
+
+        # Get absolute paths for Docker volume mounts
+        ABS_PBF_FILE=$(realpath "$PBF_FILE")
+        ABS_STYLE_FILE=$(realpath "$STYLE_FILE")
+
+        docker run --rm \
+            --network host \
+            -v "$ABS_PBF_FILE:/data/input.osm.pbf:ro" \
+            -v "$ABS_STYLE_FILE:/style.lua:ro" \
+            -e PGPASSWORD="$DB_PASSWORD" \
+            iboates/osm2pgsql:latest \
+            $OSM2PGSQL_MODE_FLAG \
+            --output=flex \
+            --style=/style.lua \
+            --database="$DB_NAME" \
+            --username="$DB_USER" \
+            --host="$DB_HOST" \
+            --port="$DB_PORT" \
+            --cache="$OSM2PGSQL_CACHE" \
+            --number-processes="$OSM2PGSQL_PROCESSES" \
+            --slim \
+            /data/input.osm.pbf
+    fi
 
 # Check import results
 echo ""
