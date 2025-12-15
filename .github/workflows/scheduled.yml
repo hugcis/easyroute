@@ -28,7 +28,7 @@ jobs:
           cache-on-failure: true
 
       - name: Cache cargo-audit
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: cache-audit-scheduled
         with:
           path: ~/.cargo/bin/cargo-audit
@@ -69,7 +69,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo-outdated
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: cache-outdated
         with:
           path: ~/.cargo/bin/cargo-outdated
