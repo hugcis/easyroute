@@ -248,9 +248,8 @@ impl CacheService {
 
     /// Check if cache is healthy
     pub async fn health_check(&mut self) -> bool {
-        let result: redis::RedisResult<String> = redis::cmd("PING")
-            .query_async(&mut self.connection)
-            .await;
+        let result: redis::RedisResult<String> =
+            redis::cmd("PING").query_async(&mut self.connection).await;
         result.is_ok()
     }
 }
@@ -334,10 +333,8 @@ mod tests {
     fn test_poi_region_cache_key_consistency() {
         let coord = Coordinates::new(48.8566, 2.3522).unwrap();
 
-        let key1 =
-            CacheService::poi_region_cache_key(&coord, 5.0, Some(&[PoiCategory::Monument]));
-        let key2 =
-            CacheService::poi_region_cache_key(&coord, 5.0, Some(&[PoiCategory::Monument]));
+        let key1 = CacheService::poi_region_cache_key(&coord, 5.0, Some(&[PoiCategory::Monument]));
+        let key2 = CacheService::poi_region_cache_key(&coord, 5.0, Some(&[PoiCategory::Monument]));
 
         assert_eq!(key1, key2);
     }

@@ -231,11 +231,7 @@ impl OverpassClient {
 
                     // Each batch uses standard retry logic (fewer retries for parallel batches)
                     let result = self
-                        .execute_query_with_retry(
-                            query,
-                            OVERPASS_RETRY_MAX_ATTEMPTS,
-                            "Batch query",
-                        )
+                        .execute_query_with_retry(query, OVERPASS_RETRY_MAX_ATTEMPTS, "Batch query")
                         .await;
 
                     match &result {

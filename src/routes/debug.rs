@@ -60,7 +60,8 @@ pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<Value> {
                 "hit_rate": format!("{:.1}%", stats.hit_rate)
             });
         } else {
-            status["checks"]["redis"] = json!({"status": "error", "message": "Redis connection failed"});
+            status["checks"]["redis"] =
+                json!({"status": "error", "message": "Redis connection failed"});
             status["status"] = json!("degraded");
         }
     } else {

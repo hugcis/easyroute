@@ -54,7 +54,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Some(Arc::new(RwLock::new(cache_service)))
             }
             Err(e) => {
-                tracing::warn!("Failed to connect to Redis: {}. Continuing without cache.", e);
+                tracing::warn!(
+                    "Failed to connect to Redis: {}. Continuing without cache.",
+                    e
+                );
                 None
             }
         }
