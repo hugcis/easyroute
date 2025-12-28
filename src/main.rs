@@ -1,4 +1,5 @@
 use axum::Router;
+use easyroute::cache::CacheService;
 use easyroute::config::Config;
 use easyroute::services::mapbox::MapboxClient;
 use easyroute::services::poi_service::PoiService;
@@ -6,6 +7,7 @@ use easyroute::services::route_generator::RouteGenerator;
 use easyroute::services::snapping_service::SnappingService;
 use easyroute::AppState;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -37,6 +39,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sqlx::migrate!("./migrations").run(&db_pool).await?;
     tracing::info!("Database migrations completed");
 
+    // Initialize Redis cache if configured
+    let cache = if let Some(ref redis_url) = config.redis_url {
+        tracing::info!("Connecting to Redis cache...");
+        match CacheService::new(
+            redis_url,
+            config.route_cache_ttl,
+            config.poi_region_cache_ttl,
+        )
+        .await
+        {
+            Ok(cache_service) => {
+                tracing::info!("Redis cache connection established");
+                Some(Arc::new(RwLock::new(cache_service)))
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to connect to Redis: {}. Continuing without cache.",
+                    e
+                );
+                None
+            }
+        }
+    } else {
+        tracing::info!("Redis URL not configured. Running without cache.");
+        None
+    };
+
     // Initialize services
     let mapbox_client = MapboxClient::new(config.mapbox_api_key.clone());
     let poi_service = PoiService::new(db_pool.clone());
@@ -52,6 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(AppState {
         db_pool,
         route_generator,
+        cache,
     });
 
     // Build router with CORS and tracing
