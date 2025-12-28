@@ -48,5 +48,24 @@ pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<Value> {
         }
     }
 
+    // Check Redis cache
+    if let Some(ref cache) = state.cache {
+        let mut cache_guard = cache.write().await;
+        if cache_guard.health_check().await {
+            let stats = cache_guard.get_stats().await;
+            status["checks"]["redis"] = json!({
+                "status": "ok",
+                "hits": stats.hits,
+                "misses": stats.misses,
+                "hit_rate": format!("{:.1}%", stats.hit_rate)
+            });
+        } else {
+            status["checks"]["redis"] = json!({"status": "error", "message": "Redis connection failed"});
+            status["status"] = json!("degraded");
+        }
+    } else {
+        status["checks"]["redis"] = json!({"status": "not_configured"});
+    }
+
     Json(status)
 }

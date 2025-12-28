@@ -32,6 +32,7 @@ async fn setup_test_app() -> axum::Router {
     let state = Arc::new(AppState {
         db_pool: pool,
         route_generator,
+        cache: None, // No Redis cache in tests
     });
 
     easyroute::routes::create_router(state)

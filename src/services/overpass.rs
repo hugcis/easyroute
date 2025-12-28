@@ -90,14 +90,23 @@ impl OverpassClient {
 
         tracing::debug!("Overpass single query: {}", query);
 
-        // Use standard retry logic with more retries for single query
-        // (batched queries have their own retry logic per batch)
-        self.execute_query_with_retry_extended(query).await
+        // Use extended retry logic for single queries (3 total attempts)
+        self.execute_query_with_retry(
+            query,
+            OVERPASS_RETRY_EXTENDED_MAX_ATTEMPTS,
+            "Overpass API query",
+        )
+        .await
     }
 
     /// Execute query with configurable retry logic
     /// Uses exponential backoff for timeouts and rate limiting
-    async fn execute_query_with_retry_internal(
+    ///
+    /// # Arguments
+    /// * `query` - The Overpass QL query string
+    /// * `max_retries` - Maximum number of retry attempts (0 = no retries, 2 = 3 total attempts)
+    /// * `query_type` - Description for logging purposes (e.g., "Batch query", "Single query")
+    async fn execute_query_with_retry(
         &self,
         query: String,
         max_retries: usize,
@@ -197,16 +206,6 @@ impl OverpassClient {
         }
     }
 
-    /// Extended retry for single queries (3 total attempts)
-    async fn execute_query_with_retry_extended(&self, query: String) -> Result<Vec<Poi>> {
-        self.execute_query_with_retry_internal(
-            query,
-            OVERPASS_RETRY_EXTENDED_MAX_ATTEMPTS,
-            "Overpass API query",
-        )
-        .await
-    }
-
     /// Execute batched parallel queries
     async fn query_pois_batched_parallel(
         &self,
@@ -230,8 +229,14 @@ impl OverpassClient {
 
                     tracing::debug!("Batch {} query: {}", idx + 1, query);
 
-                    // Each batch has its own retry logic
-                    let result = self.execute_query_with_retry(query).await;
+                    // Each batch uses standard retry logic (fewer retries for parallel batches)
+                    let result = self
+                        .execute_query_with_retry(
+                            query,
+                            OVERPASS_RETRY_MAX_ATTEMPTS,
+                            "Batch query",
+                        )
+                        .await;
 
                     match &result {
                         Ok(pois) => {
@@ -359,13 +364,6 @@ impl OverpassClient {
         );
 
         batches
-    }
-
-    /// Execute a query with retry logic (extracted for reuse in batches)
-    /// Standard retry for batched queries (2 total attempts)
-    async fn execute_query_with_retry(&self, query: String) -> Result<Vec<Poi>> {
-        self.execute_query_with_retry_internal(query, OVERPASS_RETRY_MAX_ATTEMPTS, "Batch query")
-            .await
     }
 
     fn build_query(
