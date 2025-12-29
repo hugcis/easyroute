@@ -110,27 +110,52 @@ fi
 echo -e "${GREEN}PostGIS extension found${NC}"
 echo ""
 
-# Check if pois table exists
-echo -e "${BLUE}Checking pois table...${NC}"
-if ! psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1 FROM pois LIMIT 1" > /dev/null 2>&1; then
-    echo -e "${RED}Error: pois table not found${NC}"
-    echo -e "${YELLOW}Run migrations first: sqlx migrate run${NC}"
-    exit 1
-fi
-POI_COUNT_BEFORE=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c "SELECT COUNT(*) FROM pois")
-echo -e "${GREEN}pois table found (current count: ${POI_COUNT_BEFORE// /})${NC}"
-echo ""
+# Check if osm2pgsql slim tables exist (indicates previous osm2pgsql import)
+echo -e "${BLUE}Checking for previous osm2pgsql imports...${NC}"
+if psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1 FROM planet_osm_nodes LIMIT 1" > /dev/null 2>&1; then
+    echo -e "${GREEN}Found osm2pgsql slim tables from previous import${NC}"
 
-    # Check if osm2pgsql_properties table exists
-    echo -e "${BLUE}Checking osm2pgsql_properties table...${NC}"
-    if ! psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1 FROM osm2pgsql_properties LIMIT 1" > /dev/null 2>&1; then
-        echo -e "${YELLOW}osm2pgsql_properties table not found. Using create mode...${NC}"
+    # Check if pois table schema matches new style (has 'id' column)
+    if psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT id FROM pois LIMIT 1" > /dev/null 2>&1; then
+        echo -e "${GREEN}pois table schema is compatible - can use append mode${NC}"
+        # Schema matches, use append mode
+        if [ "$MODE" = "create" ]; then
+            echo -e "${YELLOW}Switching to append mode for update${NC}"
+            MODE="append"
+            OSM2PGSQL_MODE_FLAG="--append"
+        fi
+        POI_COUNT_BEFORE=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c "SELECT COUNT(*) FROM pois")
+        echo -e "Current POI count: ${YELLOW}${POI_COUNT_BEFORE// /}${NC}"
+    else
+        echo -e "${YELLOW}pois table schema has changed - forcing fresh import${NC}"
+        # Schema changed, need to recreate everything
         MODE="create"
         OSM2PGSQL_MODE_FLAG="--create"
-    else
-        echo -e "${GREEN}osm2pgsql_properties table found${NC}"
+        POI_COUNT_BEFORE=0
+
+        echo -e "${YELLOW}Dropping osm2pgsql tables to start fresh...${NC}"
+        psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" > /dev/null 2>&1 <<DROPSQL
+DROP TABLE IF EXISTS planet_osm_nodes CASCADE;
+DROP TABLE IF EXISTS planet_osm_ways CASCADE;
+DROP TABLE IF EXISTS planet_osm_rels CASCADE;
+DROP TABLE IF EXISTS pois CASCADE;
+DROP TABLE IF EXISTS osm2pgsql_properties CASCADE;
+DROPSQL
+        echo -e "${GREEN}Old tables dropped, ready for fresh import${NC}"
     fi
-    echo ""
+else
+    echo -e "${YELLOW}No previous osm2pgsql import found - first import${NC}"
+    # First import: must use create mode and drop existing pois table
+    MODE="create"
+    OSM2PGSQL_MODE_FLAG="--create"
+    POI_COUNT_BEFORE=0
+
+    # Drop the pois table created by migrations so osm2pgsql can create it
+    echo -e "${YELLOW}Dropping pois table (if exists) so osm2pgsql can create it...${NC}"
+    psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "DROP TABLE IF EXISTS pois CASCADE" > /dev/null 2>&1
+    echo -e "${GREEN}Ready for first import${NC}"
+fi
+echo ""
 
     # Run osm2pgsql
     echo -e "${BLUE}Running osm2pgsql...${NC}"
@@ -151,6 +176,9 @@ echo ""
         --cache=$OSM2PGSQL_CACHE \
         --number-processes=$OSM2PGSQL_PROCESSES \
         --slim \
+        --verbose \
+        --log-progress=true \
+        --log-level=info \
         $PBF_FILE"
 
     # Check if osm2pgsql is available
@@ -184,8 +212,100 @@ echo ""
             --cache="$OSM2PGSQL_CACHE" \
             --number-processes="$OSM2PGSQL_PROCESSES" \
             --slim \
+            --verbose \
+            --log-progress=true \
+            --log-level=info \
             /data/input.osm.pbf
     fi
+
+# Ensure table schema matches application expectations
+echo ""
+echo -e "${BLUE}Ensuring table schema is correct...${NC}"
+psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" <<EOF
+-- Add missing columns that osm2pgsql doesn't create
+DO \$\$
+BEGIN
+    -- Add id column
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'pois' AND column_name = 'id'
+    ) THEN
+        RAISE NOTICE 'Adding id column with UUID default...';
+        ALTER TABLE pois ADD COLUMN id uuid DEFAULT gen_random_uuid() NOT NULL;
+    END IF;
+
+    -- Add created_at column
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'pois' AND column_name = 'created_at'
+    ) THEN
+        RAISE NOTICE 'Adding created_at column...';
+        ALTER TABLE pois ADD COLUMN created_at timestamp with time zone DEFAULT NOW();
+    END IF;
+
+    -- Add updated_at column
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'pois' AND column_name = 'updated_at'
+    ) THEN
+        RAISE NOTICE 'Adding updated_at column...';
+        ALTER TABLE pois ADD COLUMN updated_at timestamp with time zone DEFAULT NOW();
+    END IF;
+END
+\$\$;
+
+-- Convert location from geometry to geography if needed
+DO \$\$
+BEGIN
+    -- Check if location is geometry type
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'pois'
+        AND column_name = 'location'
+        AND udt_name = 'geometry'
+    ) THEN
+        RAISE NOTICE 'Converting location from geometry to geography...';
+        -- Drop existing spatial index
+        DROP INDEX IF EXISTS idx_pois_location;
+        -- Convert column type
+        ALTER TABLE pois ALTER COLUMN location TYPE geography(POINT, 4326) USING location::geography;
+    END IF;
+END
+\$\$;
+
+-- Ensure id column has DEFAULT if it doesn't (for create mode)
+ALTER TABLE pois ALTER COLUMN id SET DEFAULT gen_random_uuid();
+
+-- Populate any NULL ids with UUIDs (shouldn't happen with new Lua style, but safe fallback)
+UPDATE pois SET id = gen_random_uuid() WHERE id IS NULL;
+
+-- Ensure NOT NULL constraint exists
+ALTER TABLE pois ALTER COLUMN id SET NOT NULL;
+
+-- Make id the primary key if it isn't already
+DO \$\$
+BEGIN
+    -- Drop existing primary key on osm_id if it exists
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'pois_pkey' AND conrelid = 'pois'::regclass) THEN
+        ALTER TABLE pois DROP CONSTRAINT IF EXISTS pois_pkey;
+    END IF;
+
+    -- Add primary key on id
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'pois_pkey' AND conrelid = 'pois'::regclass) THEN
+        ALTER TABLE pois ADD PRIMARY KEY (id);
+    END IF;
+END
+\$\$;
+
+-- Spatial index for fast radius queries (most important!)
+CREATE INDEX IF NOT EXISTS idx_pois_location ON pois USING GIST(location);
+
+-- Regular indexes for filtering
+CREATE INDEX IF NOT EXISTS idx_pois_category ON pois(category);
+CREATE INDEX IF NOT EXISTS idx_pois_popularity ON pois(popularity_score);
+CREATE INDEX IF NOT EXISTS idx_pois_osm_id ON pois(osm_id) WHERE osm_id IS NOT NULL;
+EOF
+echo -e "${GREEN}Table schema corrected${NC}"
 
 # Check import results
 echo ""
