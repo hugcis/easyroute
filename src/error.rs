@@ -29,6 +29,9 @@ pub enum AppError {
     #[error("Route generation failed: {0}")]
     RouteGeneration(String),
 
+    #[error("No POIs found in database: {0}")]
+    NoPoisFound(String),
+
     #[error("Not found: {0}")]
     NotFound(String),
 
@@ -64,6 +67,10 @@ impl IntoResponse for AppError {
             AppError::RouteGeneration(ref e) => {
                 tracing::warn!("Route generation failed: {}", e);
                 (StatusCode::INTERNAL_SERVER_ERROR, e.as_str())
+            }
+            AppError::NoPoisFound(ref e) => {
+                tracing::info!("No POIs found in database: {}", e);
+                (StatusCode::NOT_FOUND, e.as_str())
             }
             AppError::NotFound(ref e) => (StatusCode::NOT_FOUND, e.as_str()),
             AppError::Internal(ref e) => {
