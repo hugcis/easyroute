@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgis/postgis:18-3.6
-    platform: linux/amd64
+    platform: linux/amd64  # Runs via Rosetta 2 on M1/M2/M3
     container_name: easyroute_postgres
     environment:
       POSTGRES_DB: easyroute
