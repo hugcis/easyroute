@@ -1,8 +1,7 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgis/postgis:18-3.6
+    platform: linux/amd64
     container_name: easyroute_postgres
     environment:
       POSTGRES_DB: easyroute
@@ -11,7 +10,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U easyroute_user -d easyroute"]
       interval: 10s
