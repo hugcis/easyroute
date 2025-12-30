@@ -27,7 +27,6 @@ async fn setup_test_app() -> axum::Router {
         poi_service,
         snapping_service,
         config.snap_radius_m,
-        config.route_generator.clone(),
     );
 
     let state = Arc::new(AppState {
