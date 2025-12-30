@@ -75,6 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         poi_service,
         snapping_service,
         config.snap_radius_m,
+        config.route_generator.clone(),
     );
 
     // Create application state

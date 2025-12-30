@@ -40,7 +40,13 @@ async fn test_route_generation_with_database_pois() {
     let mapbox_client = MapboxClient::new(mapbox_key);
     let poi_service = PoiService::new(pool.clone());
     let snapping_service = SnappingService::new(pool.clone());
-    let route_generator = RouteGenerator::new(mapbox_client, poi_service, snapping_service, 100.0);
+    let route_generator = RouteGenerator::new(
+        mapbox_client,
+        poi_service,
+        snapping_service,
+        100.0,
+        easyroute::config::RouteGeneratorConfig::default(),
+    );
 
     // Generate route
     let preferences = RoutePreferences {
@@ -113,7 +119,13 @@ async fn test_route_generation_distance_validation() {
     let mapbox_client = MapboxClient::new(mapbox_key);
     let poi_service = PoiService::new(pool.clone());
     let snapping_service = SnappingService::new(pool.clone());
-    let route_generator = RouteGenerator::new(mapbox_client, poi_service, snapping_service, 100.0);
+    let route_generator = RouteGenerator::new(
+        mapbox_client,
+        poi_service,
+        snapping_service,
+        100.0,
+        easyroute::config::RouteGeneratorConfig::default(),
+    );
 
     let preferences = RoutePreferences::default();
 
@@ -167,7 +179,13 @@ async fn test_route_poi_ordering() {
     let mapbox_client = MapboxClient::new(mapbox_key);
     let poi_service = PoiService::new(pool.clone());
     let snapping_service = SnappingService::new(pool.clone());
-    let route_generator = RouteGenerator::new(mapbox_client, poi_service, snapping_service, 100.0);
+    let route_generator = RouteGenerator::new(
+        mapbox_client,
+        poi_service,
+        snapping_service,
+        100.0,
+        easyroute::config::RouteGeneratorConfig::default(),
+    );
 
     let preferences = RoutePreferences::default();
 
@@ -233,7 +251,13 @@ async fn test_route_scoring_different_preferences() {
     let mapbox_client = MapboxClient::new(mapbox_key);
     let poi_service = PoiService::new(pool.clone());
     let snapping_service = SnappingService::new(pool.clone());
-    let route_generator = RouteGenerator::new(mapbox_client, poi_service, snapping_service, 100.0);
+    let route_generator = RouteGenerator::new(
+        mapbox_client,
+        poi_service,
+        snapping_service,
+        100.0,
+        easyroute::config::RouteGeneratorConfig::default(),
+    );
 
     // Test with popular preference
     let popular_pref = RoutePreferences {
