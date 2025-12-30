@@ -22,3 +22,6 @@ Cargo.lock
 
 # Logs
 *.log
+
+# Claude Code local settings
+.claude/settings.local.json
