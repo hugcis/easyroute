@@ -51,9 +51,9 @@ impl SimpleStrategy {
 
 impl PoiScoringStrategy for SimpleStrategy {
     fn score_pois<'a>(&self, pois: &'a [Poi], context: &ScoringContext) -> Vec<(f32, &'a Poi)> {
-        // Adaptive distance filtering for long routes
-        let max_reasonable_dist = if context.target_distance_km > 7.0 {
-            context.target_distance_km * 0.95
+        // Adaptive distance filtering - stricter for accuracy
+        let max_reasonable_dist = if context.target_distance_km > 8.0 {
+            context.target_distance_km * 0.7
         } else {
             context.target_distance_km * self.config.max_poi_distance_multiplier
         };
@@ -156,11 +156,11 @@ impl AdvancedStrategy {
 impl PoiScoringStrategy for AdvancedStrategy {
     fn score_pois<'a>(&self, pois: &'a [Poi], context: &ScoringContext) -> Vec<(f32, &'a Poi)> {
         // Adaptive distance filtering - stricter for route accuracy
-        // For 6km route: max_dist = 6 * 0.7 = 4.2km (previously was 5.1km with 0.85)
-        let max_reasonable_dist = if context.target_distance_km > 7.0 {
-            context.target_distance_km * 0.85 // Reduced from 0.95
+        // For 5km route: max_dist = 5 * 0.6 = 3km
+        let max_reasonable_dist = if context.target_distance_km > 8.0 {
+            context.target_distance_km * 0.7
         } else {
-            context.target_distance_km * 0.7 // Reduced from max_poi_distance_multiplier (0.85)
+            context.target_distance_km * self.config.max_poi_distance_multiplier
         };
 
         // Calculate angles for already selected POIs

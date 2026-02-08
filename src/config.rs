@@ -69,6 +69,9 @@ pub struct RouteGeneratorConfig {
     /// Number of waypoints for short routes
     pub waypoints_count_short: usize,
 
+    /// Number of waypoints for medium routes
+    pub waypoints_count_medium: usize,
+
     /// Number of waypoints for long routes
     pub waypoints_count_long: usize,
 
@@ -77,6 +80,15 @@ pub struct RouteGeneratorConfig {
 
     /// POI count threshold for using more waypoints
     pub poi_count_threshold_long: usize,
+
+    /// Distance multiplier for 2-waypoint routes
+    pub waypoint_distance_multiplier_2wp: f64,
+
+    /// Distance multiplier for 3-waypoint routes
+    pub waypoint_distance_multiplier_3wp: f64,
+
+    /// Distance multiplier for 4-waypoint routes
+    pub waypoint_distance_multiplier_4wp: f64,
 
     // --- POI Scoring Strategy Configuration ---
     /// Strategy for scoring POIs during waypoint selection
@@ -105,17 +117,21 @@ impl Default for RouteGeneratorConfig {
     fn default() -> Self {
         Self {
             poi_search_radius_multiplier: 1.0,
-            waypoint_distance_multiplier: 0.6,
-            max_poi_distance_multiplier: 0.85,
+            waypoint_distance_multiplier: 0.35,
+            max_poi_distance_multiplier: 0.6,
             min_poi_distance_km: 0.3,
             tolerance_level_relaxed: 0.3,
             tolerance_level_very_relaxed: 0.5,
             default_distance_tolerance_pct: 0.2,
             max_route_generation_retries: 5,
             waypoints_count_short: 2,
+            waypoints_count_medium: 3,
             waypoints_count_long: 4,
-            long_route_threshold_km: 4.0,
+            long_route_threshold_km: 8.0,
             poi_count_threshold_long: 3,
+            waypoint_distance_multiplier_2wp: 0.40,
+            waypoint_distance_multiplier_3wp: 0.25,
+            waypoint_distance_multiplier_4wp: 0.28,
             // POI Scoring defaults - Distance is most important for route length accuracy
             poi_scoring_strategy: ScoringStrategy::default(),
             poi_min_separation_km: 0.3,
@@ -178,6 +194,11 @@ impl RouteGeneratorConfig {
                 .parse()
                 .map_err(|_| "Invalid ROUTE_WAYPOINTS_COUNT_SHORT")?,
 
+            waypoints_count_medium: env::var("ROUTE_WAYPOINTS_COUNT_MEDIUM")
+                .unwrap_or_else(|_| defaults.waypoints_count_medium.to_string())
+                .parse()
+                .map_err(|_| "Invalid ROUTE_WAYPOINTS_COUNT_MEDIUM")?,
+
             waypoints_count_long: env::var("ROUTE_WAYPOINTS_COUNT_LONG")
                 .unwrap_or_else(|_| defaults.waypoints_count_long.to_string())
                 .parse()
@@ -192,6 +213,21 @@ impl RouteGeneratorConfig {
                 .unwrap_or_else(|_| defaults.poi_count_threshold_long.to_string())
                 .parse()
                 .map_err(|_| "Invalid ROUTE_POI_COUNT_THRESHOLD_LONG")?,
+
+            waypoint_distance_multiplier_2wp: env::var("ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_2WP")
+                .unwrap_or_else(|_| defaults.waypoint_distance_multiplier_2wp.to_string())
+                .parse()
+                .map_err(|_| "Invalid ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_2WP")?,
+
+            waypoint_distance_multiplier_3wp: env::var("ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_3WP")
+                .unwrap_or_else(|_| defaults.waypoint_distance_multiplier_3wp.to_string())
+                .parse()
+                .map_err(|_| "Invalid ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_3WP")?,
+
+            waypoint_distance_multiplier_4wp: env::var("ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_4WP")
+                .unwrap_or_else(|_| defaults.waypoint_distance_multiplier_4wp.to_string())
+                .parse()
+                .map_err(|_| "Invalid ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_4WP")?,
 
             // POI Scoring configuration
             poi_scoring_strategy: env::var("ROUTE_POI_SCORING_STRATEGY")

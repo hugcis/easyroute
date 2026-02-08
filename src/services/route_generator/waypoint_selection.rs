@@ -50,9 +50,18 @@ impl WaypointSelector {
             ));
         }
 
-        let num_waypoints = self.calculate_waypoint_count(target_distance_km, pois.len());
-        let target_waypoint_distance =
-            target_distance_km * self.config.waypoint_distance_multiplier;
+        let num_waypoints =
+            self.calculate_waypoint_count(target_distance_km, pois.len(), attempt_seed);
+        let multiplier = self.get_waypoint_distance_multiplier(num_waypoints);
+        let target_waypoint_distance = target_distance_km * multiplier;
+
+        tracing::debug!(
+            "Attempt {}: Using {} waypoints with multiplier {:.2} (target waypoint distance: {:.2}km)",
+            attempt_seed,
+            num_waypoints,
+            multiplier,
+            target_waypoint_distance
+        );
 
         // Use iterative selection with strategy pattern
         let selected = self.select_pois_iteratively(
@@ -69,6 +78,17 @@ impl WaypointSelector {
         if selected.len() >= 2 && !Self::are_spatially_distributed(start, &selected) {
             tracing::debug!("POIs not well distributed, using anyway for MVP");
         }
+
+        tracing::debug!(
+            "Selected {} POIs (seed={}): {}",
+            selected.len(),
+            attempt_seed,
+            selected
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
 
         Ok(selected)
     }
@@ -173,14 +193,56 @@ impl WaypointSelector {
         pois_with_angles.into_iter().map(|(_, poi)| poi).collect()
     }
 
-    /// Calculate the optimal number of waypoints based on distance and available POIs
-    fn calculate_waypoint_count(&self, target_distance_km: f64, poi_count: usize) -> usize {
-        if target_distance_km > self.config.long_route_threshold_km
-            && poi_count >= self.config.poi_count_threshold_long
-        {
-            self.config.waypoints_count_long
+    /// Calculate the optimal number of waypoints based on distance, available POIs, and attempt seed
+    /// Uses alternating pattern: even seeds → fewer waypoints, odd seeds → more waypoints
+    fn calculate_waypoint_count(
+        &self,
+        target_distance_km: f64,
+        poi_count: usize,
+        attempt_seed: usize,
+    ) -> usize {
+        // Ensure minimum POI availability
+        if poi_count < self.config.poi_count_threshold_long {
+            return self.config.waypoints_count_short;
+        }
+
+        // Determine range based on distance
+        let (min_wp, max_wp) = if target_distance_km > self.config.long_route_threshold_km {
+            // Long routes: use 3 or 4 waypoints
+            (
+                self.config.waypoints_count_medium,
+                self.config.waypoints_count_long,
+            )
         } else {
-            self.config.waypoints_count_short
+            // Short routes: use 2 or 3 waypoints
+            (
+                self.config.waypoints_count_short,
+                self.config.waypoints_count_medium,
+            )
+        };
+
+        // Alternate: even seeds use min, odd seeds use max
+        if attempt_seed % 2 == 0 {
+            min_wp
+        } else {
+            max_wp
+        }
+    }
+
+    /// Get the appropriate distance multiplier for the given waypoint count
+    /// More waypoints require tighter loops (smaller multiplier) to prevent overshooting
+    fn get_waypoint_distance_multiplier(&self, waypoint_count: usize) -> f64 {
+        match waypoint_count {
+            2 => self.config.waypoint_distance_multiplier_2wp,
+            3 => self.config.waypoint_distance_multiplier_3wp,
+            4 => self.config.waypoint_distance_multiplier_4wp,
+            _ => {
+                tracing::warn!(
+                    "Unexpected waypoint count {}, using 3-waypoint multiplier",
+                    waypoint_count
+                );
+                self.config.waypoint_distance_multiplier_3wp
+            }
         }
     }
 
@@ -255,5 +317,155 @@ impl WaypointSelector {
         }
 
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::RouteGeneratorConfig;
+
+    #[test]
+    fn test_waypoint_count_varies_by_attempt_seed() {
+        let config = RouteGeneratorConfig::default();
+        let selector = WaypointSelector::new(config);
+
+        // Short routes (5km): even seeds=2wp, odd seeds=3wp
+        assert_eq!(
+            selector.calculate_waypoint_count(5.0, 10, 0),
+            2,
+            "Attempt 0 should use 2 waypoints for short route"
+        );
+        assert_eq!(
+            selector.calculate_waypoint_count(5.0, 10, 1),
+            3,
+            "Attempt 1 should use 3 waypoints for short route"
+        );
+        assert_eq!(
+            selector.calculate_waypoint_count(5.0, 10, 2),
+            2,
+            "Attempt 2 should use 2 waypoints for short route"
+        );
+        assert_eq!(
+            selector.calculate_waypoint_count(5.0, 10, 3),
+            3,
+            "Attempt 3 should use 3 waypoints for short route"
+        );
+        assert_eq!(
+            selector.calculate_waypoint_count(5.0, 10, 4),
+            2,
+            "Attempt 4 should use 2 waypoints for short route"
+        );
+
+        // Long routes (10km): even seeds=3wp, odd seeds=4wp
+        assert_eq!(
+            selector.calculate_waypoint_count(10.0, 10, 0),
+            3,
+            "Attempt 0 should use 3 waypoints for long route"
+        );
+        assert_eq!(
+            selector.calculate_waypoint_count(10.0, 10, 1),
+            4,
+            "Attempt 1 should use 4 waypoints for long route"
+        );
+        assert_eq!(
+            selector.calculate_waypoint_count(10.0, 10, 2),
+            3,
+            "Attempt 2 should use 3 waypoints for long route"
+        );
+        assert_eq!(
+            selector.calculate_waypoint_count(10.0, 10, 3),
+            4,
+            "Attempt 3 should use 4 waypoints for long route"
+        );
+    }
+
+    #[test]
+    fn test_waypoint_count_respects_poi_threshold() {
+        let config = RouteGeneratorConfig::default();
+        let selector = WaypointSelector::new(config);
+
+        // With only 2 POIs (below threshold of 3), should always use minimum (2)
+        assert_eq!(
+            selector.calculate_waypoint_count(10.0, 2, 0),
+            2,
+            "Should fallback to 2 waypoints when insufficient POIs (even seed)"
+        );
+        assert_eq!(
+            selector.calculate_waypoint_count(10.0, 2, 1),
+            2,
+            "Should fallback to 2 waypoints when insufficient POIs (odd seed)"
+        );
+
+        // At exactly the threshold (3 POIs), should allow variation
+        assert_eq!(
+            selector.calculate_waypoint_count(10.0, 3, 0),
+            3,
+            "With 3 POIs, should allow 3 waypoints"
+        );
+        assert_eq!(
+            selector.calculate_waypoint_count(10.0, 3, 1),
+            4,
+            "With 3 POIs, should allow 4 waypoints"
+        );
+    }
+
+    #[test]
+    fn test_distance_multiplier_per_waypoint_count() {
+        let config = RouteGeneratorConfig::default();
+        let selector = WaypointSelector::new(config);
+
+        assert_eq!(
+            selector.get_waypoint_distance_multiplier(2),
+            0.40,
+            "2 waypoints should use 0.40 multiplier"
+        );
+        assert_eq!(
+            selector.get_waypoint_distance_multiplier(3),
+            0.25,
+            "3 waypoints should use 0.25 multiplier"
+        );
+        assert_eq!(
+            selector.get_waypoint_distance_multiplier(4),
+            0.28,
+            "4 waypoints should use 0.28 multiplier"
+        );
+
+        // Unknown count should fall back to 3-waypoint multiplier
+        assert_eq!(
+            selector.get_waypoint_distance_multiplier(5),
+            0.25,
+            "Unknown waypoint count should fallback to 3-waypoint multiplier"
+        );
+        assert_eq!(
+            selector.get_waypoint_distance_multiplier(1),
+            0.25,
+            "Invalid waypoint count should fallback to 3-waypoint multiplier"
+        );
+    }
+
+    #[test]
+    fn test_waypoint_count_at_distance_threshold() {
+        let config = RouteGeneratorConfig::default();
+        let selector = WaypointSelector::new(config);
+
+        // At exactly 8km threshold
+        assert_eq!(
+            selector.calculate_waypoint_count(8.0, 10, 0),
+            2,
+            "At threshold, should still use short route settings"
+        );
+
+        // Just above threshold
+        assert_eq!(
+            selector.calculate_waypoint_count(8.1, 10, 0),
+            3,
+            "Above threshold, should use long route settings (3 for even seed)"
+        );
+        assert_eq!(
+            selector.calculate_waypoint_count(8.1, 10, 1),
+            4,
+            "Above threshold, should use long route settings (4 for odd seed)"
+        );
     }
 }

@@ -278,3 +278,98 @@ async fn test_route_scoring_different_preferences() {
 
     common::cleanup_test_db(&pool).await;
 }
+
+#[tokio::test]
+#[serial]
+async fn test_route_alternatives_use_different_waypoint_counts() {
+    if common::should_skip_real_api_tests() {
+        println!("Skipping real API test");
+        return;
+    }
+
+    let pool = common::setup_test_db().await;
+    common::cleanup_test_db(&pool).await;
+
+    // Insert multiple POIs in a diverse arrangement to allow for 2, 3, and 4 waypoint routes
+    let center = Coordinates::new(48.8566, 2.3522).unwrap();
+
+    // Create 10 POIs at various distances and angles for diversity
+    let pois = vec![
+        common::create_test_poi("North POI", PoiCategory::Monument, 48.8600, 2.3522),
+        common::create_test_poi("Northeast POI", PoiCategory::Park, 48.8590, 2.3580),
+        common::create_test_poi("East POI", PoiCategory::Museum, 48.8566, 2.3600),
+        common::create_test_poi("Southeast POI", PoiCategory::Viewpoint, 48.8540, 2.3580),
+        common::create_test_poi("South POI", PoiCategory::Park, 48.8530, 2.3522),
+        common::create_test_poi("Southwest POI", PoiCategory::Monument, 48.8540, 2.3460),
+        common::create_test_poi("West POI", PoiCategory::Museum, 48.8566, 2.3450),
+        common::create_test_poi("Northwest POI", PoiCategory::Viewpoint, 48.8590, 2.3460),
+        common::create_test_poi("Center North POI", PoiCategory::Park, 48.8580, 2.3522),
+        common::create_test_poi("Center South POI", PoiCategory::Monument, 48.8550, 2.3522),
+    ];
+
+    for poi in &pois {
+        easyroute::db::queries::insert_poi(&pool, poi)
+            .await
+            .unwrap();
+    }
+
+    let mapbox_client =
+        MapboxClient::new(std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY must be set"));
+    let poi_service = PoiService::new(pool.clone());
+    let snapping_service = SnappingService::new(pool.clone());
+    let route_generator = RouteGenerator::new(
+        mapbox_client,
+        poi_service,
+        snapping_service,
+        100.0,
+        easyroute::config::RouteGeneratorConfig::default(),
+    );
+
+    // Request 5 alternatives to get diverse waypoint counts
+    let preferences = RoutePreferences {
+        poi_categories: None,
+        hidden_gems: false,
+        max_alternatives: 5,
+    };
+
+    let result = route_generator
+        .generate_loop_route(center, 5.0, 1.0, &TransportMode::Walk, &preferences)
+        .await;
+
+    assert!(result.is_ok(), "Route generation should succeed");
+    let routes = result.unwrap();
+    assert!(
+        routes.len() >= 3,
+        "Should generate at least 3 alternatives, got {}",
+        routes.len()
+    );
+
+    // Check that routes have varying POI counts (proxy for different waypoint counts)
+    let poi_counts: Vec<usize> = routes.iter().map(|r| r.pois.len()).collect();
+    let unique_counts: std::collections::HashSet<_> = poi_counts.iter().collect();
+
+    println!(
+        "Generated {} routes with POI counts: {:?}",
+        routes.len(),
+        poi_counts
+    );
+
+    assert!(
+        unique_counts.len() >= 2,
+        "Routes should have diverse POI counts, got: {:?}",
+        poi_counts
+    );
+
+    // Verify routes are within tolerance
+    for (idx, route) in routes.iter().enumerate() {
+        let distance = route.distance_km;
+        assert!(
+            (4.0..=6.0).contains(&distance),
+            "Route {} distance {:.2}km should be within 4-6km range",
+            idx,
+            distance
+        );
+    }
+
+    common::cleanup_test_db(&pool).await;
+}
