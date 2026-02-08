@@ -6,19 +6,25 @@ use uuid::Uuid;
 /// Setup test database connection
 #[allow(dead_code)]
 pub async fn setup_test_db() -> PgPool {
-    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-        "postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute".to_string()
+    // Use TEST_DATABASE_URL or fall back to test database
+    let database_url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
+        "postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute_test".to_string()
     });
+
+    // Safety check: ensure we're not using the dev database
+    if database_url.contains("/easyroute") && !database_url.contains("/easyroute_test") {
+        panic!("Tests are configured to use development database! Set TEST_DATABASE_URL to a test database.");
+    }
 
     let pool = sqlx::PgPool::connect(&database_url)
         .await
         .expect("Failed to connect to test database");
 
-    // Run migrations
+    // Run migrations on test database
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .expect("Failed to run migrations");
+        .expect("Failed to run migrations on test database");
 
     pool
 }
@@ -53,8 +59,8 @@ pub fn get_test_config() -> Config {
     Config {
         host: "0.0.0.0".to_string(),
         port: 3000,
-        database_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-            "postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute".to_string()
+        database_url: std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute_test".to_string()
         }),
         redis_url: Some(
             std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string()),

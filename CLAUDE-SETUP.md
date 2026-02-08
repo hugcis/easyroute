@@ -42,6 +42,34 @@ RUST_LOG=debug cargo test
 cargo test --test database_tests
 ```
 
+### Database Test Isolation
+
+Tests use a separate database (`easyroute_test`) to avoid interfering with development data.
+
+**First-time setup:**
+```bash
+# Restart docker-compose to create test database
+docker-compose down
+docker-compose up -d
+
+# Verify test database exists
+docker-compose exec postgres psql -U easyroute_user -l | grep easyroute_test
+```
+
+**Manual test database reset:**
+```bash
+# Drop and recreate test database
+docker-compose exec postgres psql -U easyroute_user -c "DROP DATABASE IF EXISTS easyroute_test;"
+docker-compose exec postgres psql -U easyroute_user -c "CREATE DATABASE easyroute_test;"
+docker-compose exec postgres psql -U easyroute_user -d easyroute_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+```
+
+**How it works:**
+- Tests connect to `easyroute_test` database (via `TEST_DATABASE_URL` env variable)
+- Dev database (`easyroute`) remains untouched during test runs
+- Init script (`docker/init-test-db.sh`) auto-creates test database on container startup
+- Tests truncate data after each run (test database only)
+
 ### Test Coverage (939 lines)
 
 - **api_tests.rs** - Endpoint validation, request/response serialization

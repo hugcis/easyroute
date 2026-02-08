@@ -10,6 +10,7 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   DATABASE_URL: postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute
+  TEST_DATABASE_URL: postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute_test
   REDIS_URL: redis://localhost:6379
   MAPBOX_API_KEY: test_api_key_for_ci
   RUST_LOG: info,easyroute=debug
@@ -74,6 +75,12 @@ jobs:
 
       - name: Run database migrations
         run: sqlx migrate run
+
+      - name: Create test database
+        run: |
+          PGPASSWORD=easyroute_pass psql -h localhost -U easyroute_user -d easyroute -c "CREATE DATABASE easyroute_test;"
+          PGPASSWORD=easyroute_pass psql -h localhost -U easyroute_user -d easyroute_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          DATABASE_URL="postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute_test" sqlx migrate run
 
       - name: Check code formatting
         run: cargo fmt --all -- --check
@@ -144,6 +151,7 @@ jobs:
 
     env:
       DATABASE_URL: postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute
+      TEST_DATABASE_URL: postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute_test
       REDIS_URL: redis://localhost:6379
       MAPBOX_API_KEY: test_api_key_for_ci
       SKIP_REAL_API_TESTS: 1
@@ -200,6 +208,12 @@ jobs:
 
       - name: Run database migrations
         run: sqlx migrate run
+
+      - name: Create test database
+        run: |
+          PGPASSWORD=easyroute_pass psql -h localhost -U easyroute_user -d easyroute -c "CREATE DATABASE easyroute_test;"
+          PGPASSWORD=easyroute_pass psql -h localhost -U easyroute_user -d easyroute_test -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          DATABASE_URL="postgres://easyroute_user:easyroute_pass@localhost:5432/easyroute_test" sqlx migrate run
 
       - name: Cache tarpaulin
         uses: actions/cache@v5
