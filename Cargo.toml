@@ -3,6 +3,7 @@ name = "easyroute"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.70"
+license = "MIT"
 
 [dependencies]
 # Web framework
