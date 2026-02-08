@@ -234,6 +234,47 @@ pub async fn insert_poi(pool: &PgPool, poi: &Poi) -> Result<Uuid, sqlx::Error> {
     Ok(result.0)
 }
 
+/// Get clustered coverage hulls of all POIs as GeoJSON, plus total POI count.
+/// Uses DBSCAN clustering so separate geographic regions appear as distinct polygons
+/// rather than one convex blob spanning empty space.
+pub async fn get_poi_coverage(pool: &PgPool) -> Result<(Option<String>, i64, i64), sqlx::Error> {
+    let row: (Option<String>, i64, i64) = sqlx::query_as(
+        r#"
+        WITH clusters AS (
+            SELECT
+                ST_ClusterDBSCAN(location::geometry, eps := 0.05, minpoints := 2) OVER () as cluster_id,
+                location::geometry as geom
+            FROM pois
+        ),
+        cluster_hulls AS (
+            SELECT
+                CASE
+                    WHEN COUNT(*) >= 3 THEN ST_ConcaveHull(ST_Collect(geom), 0.3)
+                    ELSE ST_Buffer(ST_Collect(geom), 0.001)
+                END as hull
+            FROM clusters
+            WHERE cluster_id IS NOT NULL
+            GROUP BY cluster_id
+
+            UNION ALL
+
+            SELECT ST_Buffer(geom, 0.001) as hull
+            FROM clusters
+            WHERE cluster_id IS NULL
+        )
+        SELECT
+            ST_AsGeoJSON(ST_Union(hull)) as coverage_geojson,
+            (SELECT COUNT(*) FROM pois) as poi_count,
+            (SELECT COUNT(DISTINCT cluster_id) FROM clusters WHERE cluster_id IS NOT NULL) as cluster_count
+        FROM cluster_hulls
+        "#,
+    )
+    .fetch_one(pool)
+    .await?;
+
+    Ok(row)
+}
+
 // Helper struct for deserializing POI rows from database
 #[derive(sqlx::FromRow)]
 struct PoiRow {

@@ -15,5 +15,6 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/routes/loop", post(loop_route::create_loop_route))
         .route("/pois", get(pois::query_pois))
         .route("/debug/health", get(debug::health_check))
+        .route("/debug/coverage", get(debug::data_coverage))
         .with_state(state)
 }

@@ -282,7 +282,7 @@
     <div id="generateTab" class="tab-content active">
         <div class="form-group">
             <label>API Endpoint</label>
-            <input type="text" id="apiEndpoint" value="http://localhost:8080" placeholder="http://localhost:8080">
+            <input type="text" id="apiEndpoint" value="http://localhost:3000" placeholder="http://localhost:3000">
         </div>
 
         <div class="form-group">
@@ -359,6 +359,10 @@
         <p style="font-size: 12px; color: #666; margin-top: 0;">Paste API response JSON below:</p>
         <textarea class="api-input" id="apiResponse" placeholder='{"routes": [...]}'></textarea>
         <button onclick="visualizeRoutes()">Visualize Routes</button>
+    </div>
+
+    <div style="margin-bottom: 10px;">
+        <button id="coverageBtn" onclick="toggleCoverage()" style="background: #6c757d; font-size: 12px; padding: 6px 12px;">Show Coverage</button>
     </div>
 
     <div id="routeInfo" class="route-info" style="display: none;"></div>
@@ -768,6 +772,94 @@
 
     // Auto-load example on page load (remove in production)
     // document.getElementById('apiResponse').value = JSON.stringify(exampleData, null, 2);
+
+    // Coverage overlay
+    let coverageVisible = false;
+
+    async function toggleCoverage() {
+        const btn = document.getElementById('coverageBtn');
+
+        if (coverageVisible) {
+            // Remove coverage layer
+            if (map.getLayer('coverage-fill')) map.removeLayer('coverage-fill');
+            if (map.getLayer('coverage-outline')) map.removeLayer('coverage-outline');
+            if (map.getSource('coverage')) map.removeSource('coverage');
+            coverageVisible = false;
+            btn.textContent = 'Show Coverage';
+            btn.style.background = '#6c757d';
+            return;
+        }
+
+        btn.textContent = 'Loading...';
+        btn.disabled = true;
+
+        try {
+            const apiEndpoint = document.getElementById('apiEndpoint').value.trim();
+            const response = await fetch(`${apiEndpoint}/api/v1/debug/coverage`);
+            const data = await response.json();
+
+            if (data.error) throw new Error(data.error);
+            if (!data.coverage) throw new Error('No POI data available');
+
+            const geojson = {
+                type: 'Feature',
+                geometry: data.coverage
+            };
+
+            if (map.getSource('coverage')) {
+                map.getSource('coverage').setData(geojson);
+            } else {
+                map.addSource('coverage', { type: 'geojson', data: geojson });
+            }
+
+            if (!map.getLayer('coverage-fill')) {
+                map.addLayer({
+                    id: 'coverage-fill',
+                    type: 'fill',
+                    source: 'coverage',
+                    paint: {
+                        'fill-color': 'rgba(66, 100, 251, 0.1)',
+                        'fill-outline-color': 'rgba(66, 100, 251, 0.4)'
+                    }
+                });
+            }
+
+            if (!map.getLayer('coverage-outline')) {
+                map.addLayer({
+                    id: 'coverage-outline',
+                    type: 'line',
+                    source: 'coverage',
+                    paint: {
+                        'line-color': 'rgba(66, 100, 251, 0.6)',
+                        'line-width': 2,
+                        'line-dasharray': [4, 2]
+                    }
+                });
+            }
+
+            // Fit bounds to coverage area
+            const bounds = new mapboxgl.LngLatBounds();
+            const geom = data.coverage;
+            if (geom.type === 'Polygon') {
+                geom.coordinates[0].forEach(c => bounds.extend(c));
+            } else if (geom.type === 'MultiPolygon') {
+                geom.coordinates.forEach(poly => poly[0].forEach(c => bounds.extend(c)));
+            }
+            map.fitBounds(bounds, { padding: 50 });
+
+            coverageVisible = true;
+            const clusters = data.cluster_count || '?';
+            btn.textContent = `Hide Coverage (${data.poi_count} POIs, ${clusters} regions)`;
+            btn.style.background = '#4264fb';
+
+        } catch (error) {
+            console.error('Coverage error:', error);
+            alert('Failed to load coverage: ' + error.message);
+            btn.textContent = 'Show Coverage';
+        } finally {
+            btn.disabled = false;
+        }
+    }
 </script>
 
 </body>

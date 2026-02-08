@@ -1,3 +1,4 @@
+use crate::db::queries;
 use crate::AppState;
 use axum::{extract::State, Json};
 use serde_json::{json, Value};
@@ -69,4 +70,22 @@ pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<Value> {
     }
 
     Json(status)
+}
+
+/// GET /debug/coverage - Return convex hull of all POIs as GeoJSON
+pub async fn data_coverage(State(state): State<Arc<AppState>>) -> Json<Value> {
+    match queries::get_poi_coverage(&state.db_pool).await {
+        Ok((geojson_str, poi_count, cluster_count)) => {
+            let coverage = geojson_str.and_then(|s| serde_json::from_str::<Value>(&s).ok());
+
+            Json(json!({
+                "poi_count": poi_count,
+                "cluster_count": cluster_count,
+                "coverage": coverage
+            }))
+        }
+        Err(e) => Json(json!({
+            "error": e.to_string()
+        })),
+    }
 }
