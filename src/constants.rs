@@ -14,10 +14,6 @@ pub const DEFAULT_SNAP_RADIUS_METERS: f64 = 100.0;
 pub const MIN_ALTERNATIVES_FOR_SUCCESS: u32 = 3; // Generate at least 3 alternatives
 pub const MAX_ALTERNATIVES_CLAMP: u32 = 5;
 
-// Geometric loop fallback configuration
-pub const GEOMETRIC_LOOP_NUM_WAYPOINTS: usize = 6; // Number of points around the circle
-pub const GEOMETRIC_LOOP_RADIUS_DIVISOR: f64 = std::f64::consts::TAU; // 2*PI for circle circumference
-
 // Distance calculation multipliers
 pub const DISTANCE_ADJUSTMENT_INITIAL_MULTIPLIER: f64 = 1.0;
 pub const DISTANCE_ADJUSTMENT_INITIAL_STEP: f64 = 0.15;
