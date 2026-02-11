@@ -15,10 +15,14 @@ pub async fn create_loop_route(
     request.validate().map_err(AppError::InvalidRequest)?;
 
     tracing::info!(
-        "Loop route request: {:?}, distance: {}km, mode: {:?}",
-        request.start_point,
-        request.distance_km,
-        request.mode
+        lat = request.start_point.lat,
+        lng = request.start_point.lng,
+        distance_km = request.distance_km,
+        mode = %request.mode.mapbox_profile(),
+        tolerance_km = request.distance_tolerance,
+        "Loop route request: ({:.4}, {:.4}), {:.1}km, mode={}, tolerance={:.2}km",
+        request.start_point.lat, request.start_point.lng,
+        request.distance_km, request.mode.mapbox_profile(), request.distance_tolerance
     );
 
     // Build cache key

@@ -53,6 +53,13 @@ impl MapboxClient {
             coordinates_str
         );
 
+        tracing::debug!(
+            waypoints = waypoints.len(),
+            mode = %mode.mapbox_profile(),
+            "Mapbox API request: {} waypoints, profile {}",
+            waypoints.len(), mode.mapbox_profile()
+        );
+
         let response = self
             .client
             .get(&url)
@@ -72,6 +79,12 @@ impl MapboxClient {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
+            tracing::warn!(
+                status = %status,
+                waypoints = waypoints.len(),
+                "Mapbox API HTTP error {}: {}",
+                status, error_text
+            );
             return Err(AppError::MapboxApi(format!(
                 "HTTP {}: {}",
                 status, error_text
@@ -84,11 +97,24 @@ impl MapboxClient {
             .map_err(|e| AppError::MapboxApi(format!("Failed to parse response: {}", e)))?;
 
         if directions.routes.is_empty() {
+            tracing::warn!(
+                waypoints = waypoints.len(),
+                mode = %mode.mapbox_profile(),
+                "Mapbox returned 0 routes for {} waypoints ({})",
+                waypoints.len(), mode.mapbox_profile()
+            );
             return Err(AppError::MapboxApi("No routes found".to_string()));
         }
 
         // Convert first route to our format
         let route = &directions.routes[0];
+        tracing::debug!(
+            distance_km = %format!("{:.2}", route.distance / 1000.0),
+            duration_min = %format!("{:.0}", route.duration / 60.0),
+            path_points = route.geometry.coordinates.len(),
+            "Mapbox response: {:.2}km, {:.0}min, {} path points",
+            route.distance / 1000.0, route.duration / 60.0, route.geometry.coordinates.len()
+        );
         Ok(DirectionsResponse {
             distance_meters: route.distance,
             duration_seconds: route.duration,
