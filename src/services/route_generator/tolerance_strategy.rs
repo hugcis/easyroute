@@ -40,6 +40,17 @@ impl ToleranceStrategy {
         }
     }
 
+    /// Score a route (public delegation for geometric fallback paths).
+    pub fn score_route(
+        &self,
+        route: &Route,
+        target_distance_km: f64,
+        preferences: &RoutePreferences,
+    ) -> f32 {
+        self.route_scorer
+            .calculate_route_score(route, target_distance_km, preferences)
+    }
+
     /// Try to generate routes with a specific tolerance level
     #[allow(clippy::too_many_arguments)]
     pub async fn try_generate_routes_with_tolerance(

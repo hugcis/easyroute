@@ -62,6 +62,7 @@ impl RouteGenerator {
     async fn enhance_geometric_route(
         &self,
         mut route: Route,
+        target_distance_km: f64,
         preferences: &RoutePreferences,
         area_poi_count: usize,
     ) -> Route {
@@ -96,6 +97,10 @@ impl RouteGenerator {
             self.config.metrics_overlap_threshold_m,
         );
         route.metrics = Some(metrics);
+
+        route.score = self
+            .tolerance_strategy
+            .score_route(&route, target_distance_km, preferences);
 
         route
     }
@@ -146,7 +151,9 @@ impl RouteGenerator {
                 .geometric_loop_generator
                 .generate_geometric_loop(start, target_distance_km, mode)
                 .await?;
-            let route = self.enhance_geometric_route(route, preferences, 0).await;
+            let route = self
+                .enhance_geometric_route(route, target_distance_km, preferences, 0)
+                .await;
             return Ok(vec![route]);
         }
 
@@ -254,7 +261,7 @@ impl RouteGenerator {
             .generate_geometric_loop(start, target_distance_km, mode)
             .await?;
         let route = self
-            .enhance_geometric_route(route, preferences, candidate_pois.len())
+            .enhance_geometric_route(route, target_distance_km, preferences, candidate_pois.len())
             .await;
         Ok(vec![route])
     }
