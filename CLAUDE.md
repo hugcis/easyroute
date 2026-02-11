@@ -14,7 +14,10 @@ Rust REST API that generates personalized walking/cycling loop routes with POI w
 # Prerequisites: docker-compose up -d postgres redis
 
 # Run server
-cargo run
+cargo run --bin easyroute    # or: just run / just serve (with auto-reload)
+
+# Run evaluation harness
+cargo run --bin evaluate -- --scenario=monaco --runs=5    # or: just evaluate --scenario=monaco
 
 # Fast tests (skips Mapbox/external API calls)
 SKIP_REAL_API_TESTS=true cargo test
@@ -58,13 +61,19 @@ POST /api/v1/routes/loop
 The route generator (`src/services/route_generator/`) is the core component, split into sub-modules:
 
 - `mod.rs` - Orchestrator: POI discovery, route generation loop, caching integration
-- `waypoint_selection.rs` - Selects 2-4 POIs as waypoints based on distance/angle from start
-- `scoring_strategy.rs` - Two strategies: `Simple` (distance-only) and `Advanced` (quality + clustering + angular diversity)
-- `tolerance_strategy.rs` - Adaptive tolerance levels for distance matching
-- `geometric_loop.rs` - Fallback: generates geometric circle waypoints when insufficient POIs
-- `route_scoring.rs` - Final route scoring (distance accuracy, POI count, quality, diversity)
+- `waypoint_selection.rs` - Selects 2-4 POIs as waypoints based on distance/angle from start; loop shape predictor in `Advanced` strategy rewards candidates that expand convex hull area
+- `scoring_strategy.rs` - Two strategies: `Simple` (distance-only) and `Advanced` (quality + clustering + angular diversity + loop shape prediction)
+- `tolerance_strategy.rs` - Adaptive tolerance levels for distance matching; `verify_loop_shape()` rejects bad waypoint configurations before Mapbox API calls
+- `geometric_loop.rs` - Fallback: generates 4 geometric circle waypoints (with ±15% radius jitter and ~20° rotation jitter) when insufficient POIs
+- `route_scoring.rs` - Final route scoring with two versions: V1 (distance accuracy, POI count, quality, diversity) and V2 (adds shape-aware scoring: circularity, convexity, path overlap). Set via `ROUTE_SCORING_VERSION` env var
+- `route_metrics.rs` - `RouteMetrics` with 7 quality metrics: circularity, convexity, path overlap, POI density, category entropy, landmark coverage, density context. Auto-computed and attached to every route response
 
-The scoring strategy is configured via `ROUTE_POI_SCORING_STRATEGY` env var (`simple` or `advanced`). Default is `simple`. All route generator parameters are configurable via env vars with `ROUTE_` prefix (see `src/config.rs` for the full list with defaults).
+The scoring strategy is configured via `ROUTE_POI_SCORING_STRATEGY` env var (`simple` or `advanced`). Default is `simple`. The scoring version is configured via `ROUTE_SCORING_VERSION` env var (`1` or `2`). V2 adds shape-aware scoring with circularity, convexity, and path overlap weights. All route generator parameters are configurable via env vars with `ROUTE_` prefix (see `src/config.rs` for the full list with defaults).
+
+### Evaluation System
+
+- **Evaluation harness** (`src/evaluation/mod.rs` + `src/bin/evaluate.rs`): CLI tool that runs route generation scenarios, aggregates metrics, and outputs reports. Run via `cargo run --bin evaluate` or `just evaluate` with `--scenario=`, `--runs=`, `--json` flags
+- **Human rating system**: `migrations/003_create_route_evaluations.sql` creates `evaluated_routes` and `route_ratings` tables. API endpoints under `/api/v1/evaluations/` for listing/getting evaluations, submitting ratings, and computing Pearson correlation between metrics and human ratings
 
 ### Key Services
 
@@ -97,6 +106,10 @@ The scoring strategy is configured via `ROUTE_POI_SCORING_STRATEGY` env var (`si
 - `POST /api/v1/routes/loop` - Generate loop routes (main endpoint)
 - `GET /api/v1/pois` - Query POIs by location/category
 - `GET /api/v1/debug/health` - Health check (DB, PostGIS, Redis, POI count)
+- `GET /api/v1/evaluations` - List evaluated routes
+- `GET /api/v1/evaluations/{id}` - Get evaluation details
+- `POST /api/v1/evaluations/{id}/ratings` - Submit human rating
+- `GET /api/v1/evaluations/stats/correlation` - Metric-rating Pearson correlation
 
 ## Constraints
 
@@ -118,3 +131,4 @@ POIs come from OpenStreetMap via `osm2pgsql` import (scripts in `osm/`):
 - [CLAUDE-ARCHITECTURE.md](CLAUDE-ARCHITECTURE.md) - Detailed component descriptions, data models, request flow
 - [CLAUDE-GUIDELINES.md](CLAUDE-GUIDELINES.md) - Code quality guidelines, development patterns
 - [CLAUDE-PERFORMANCE.md](CLAUDE-PERFORMANCE.md) - Caching strategy details, PostGIS query patterns, performance targets
+- [CLAUDE-GIT.md](CLAUDE-GIT.md) - Git commit message format, atomic commit guidelines
