@@ -111,6 +111,12 @@ pub struct RouteGeneratorConfig {
 
     /// Scoring weight for variation randomization (0.0-1.0)
     pub poi_score_weight_variation: f32,
+
+    /// Distance threshold (meters) for detecting path overlap (streets walked twice)
+    pub metrics_overlap_threshold_m: f64,
+
+    /// Scoring version: 1 = original, 2 = shape-aware (includes circularity/convexity/overlap)
+    pub scoring_version: u32,
 }
 
 impl Default for RouteGeneratorConfig {
@@ -140,6 +146,8 @@ impl Default for RouteGeneratorConfig {
             poi_score_weight_angular: 0.1,  // Decreased from 0.15
             poi_score_weight_clustering: 0.05, // Decreased from 0.1
             poi_score_weight_variation: 0.05, // Same
+            metrics_overlap_threshold_m: 25.0,
+            scoring_version: 1,
         }
     }
 }
@@ -263,6 +271,16 @@ impl RouteGeneratorConfig {
                 .unwrap_or_else(|_| defaults.poi_score_weight_variation.to_string())
                 .parse()
                 .map_err(|_| "Invalid ROUTE_POI_SCORE_WEIGHT_VARIATION")?,
+
+            metrics_overlap_threshold_m: env::var("ROUTE_METRICS_OVERLAP_THRESHOLD_M")
+                .unwrap_or_else(|_| defaults.metrics_overlap_threshold_m.to_string())
+                .parse()
+                .map_err(|_| "Invalid ROUTE_METRICS_OVERLAP_THRESHOLD_M")?,
+
+            scoring_version: env::var("ROUTE_SCORING_VERSION")
+                .unwrap_or_else(|_| defaults.scoring_version.to_string())
+                .parse()
+                .map_err(|_| "Invalid ROUTE_SCORING_VERSION")?,
         })
     }
 }

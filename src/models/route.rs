@@ -1,4 +1,5 @@
 use crate::models::{Coordinates, Poi, PoiCategory};
+use crate::services::route_generator::route_metrics::RouteMetrics;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -82,6 +83,9 @@ pub struct Route {
     pub snapped_pois: Vec<SnappedPoi>,
     /// Route quality score (0-10)
     pub score: f32,
+    /// Computed route quality metrics
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<RouteMetrics>,
 }
 
 impl Route {
@@ -100,6 +104,7 @@ impl Route {
             pois,
             snapped_pois: Vec::new(),
             score: 0.0, // Will be calculated later
+            metrics: None,
         }
     }
 

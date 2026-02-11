@@ -1,4 +1,5 @@
 mod geometric_loop;
+pub mod route_metrics;
 mod route_scoring;
 mod scoring_strategy;
 mod tolerance_strategy;
@@ -33,7 +34,7 @@ impl RouteGenerator {
     ) -> Self {
         // Create shared components
         let waypoint_selector = WaypointSelector::new(config.clone());
-        let route_scorer = RouteScorer::new(snapping_service, snap_radius_m);
+        let route_scorer = RouteScorer::new(snapping_service, snap_radius_m, config.clone());
         let geometric_loop_generator = GeometricLoopGenerator::new(mapbox_client.clone());
         let tolerance_strategy = ToleranceStrategy::new(
             config.clone(),
@@ -227,6 +228,7 @@ mod tests {
             ],
             snapped_pois: vec![],
             score: 0.0,
+            metrics: None,
         };
 
         // Test that route has expected properties
