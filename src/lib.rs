@@ -5,6 +5,7 @@ pub mod config;
 pub mod constants;
 pub mod db;
 pub mod error;
+pub mod evaluation;
 pub mod models;
 pub mod routes;
 pub mod services;

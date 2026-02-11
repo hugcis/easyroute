@@ -1,5 +1,6 @@
 pub mod coordinates;
 pub mod distance;
+pub mod evaluation;
 pub mod poi;
 pub mod route;
 
