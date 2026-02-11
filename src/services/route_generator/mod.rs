@@ -13,12 +13,15 @@ use crate::services::poi_service::PoiService;
 use crate::services::snapping_service::SnappingService;
 
 use geometric_loop::GeometricLoopGenerator;
+use route_metrics::RouteMetrics;
 use route_scoring::RouteScorer;
 use tolerance_strategy::ToleranceStrategy;
 use waypoint_selection::WaypointSelector;
 
 pub struct RouteGenerator {
     poi_service: PoiService,
+    snapping_service: SnappingService,
+    snap_radius_m: f64,
     config: RouteGeneratorConfig,
     geometric_loop_generator: GeometricLoopGenerator,
     tolerance_strategy: ToleranceStrategy,
@@ -34,7 +37,8 @@ impl RouteGenerator {
     ) -> Self {
         // Create shared components
         let waypoint_selector = WaypointSelector::new(config.clone());
-        let route_scorer = RouteScorer::new(snapping_service, snap_radius_m, config.clone());
+        let route_scorer =
+            RouteScorer::new(snapping_service.clone(), snap_radius_m, config.clone());
         let geometric_loop_generator = GeometricLoopGenerator::new(mapbox_client.clone());
         let tolerance_strategy = ToleranceStrategy::new(
             config.clone(),
@@ -45,10 +49,55 @@ impl RouteGenerator {
 
         RouteGenerator {
             poi_service,
+            snapping_service,
+            snap_radius_m,
             config,
             geometric_loop_generator,
             tolerance_strategy,
         }
+    }
+
+    /// Enhance a geometric fallback route with snapped POIs and quality metrics.
+    /// Snapping failure is non-fatal — the route is always returned.
+    async fn enhance_geometric_route(
+        &self,
+        mut route: Route,
+        preferences: &RoutePreferences,
+        area_poi_count: usize,
+    ) -> Route {
+        match self
+            .snapping_service
+            .find_snapped_pois(
+                &route.path,
+                &[],
+                self.snap_radius_m,
+                preferences.poi_categories.as_deref(),
+            )
+            .await
+        {
+            Ok(snapped_pois) => {
+                tracing::debug!(
+                    count = snapped_pois.len(),
+                    "Added snapped POIs to geometric fallback route"
+                );
+                route = route.with_snapped_pois(snapped_pois);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to snap POIs to geometric fallback route, continuing without"
+                );
+            }
+        }
+
+        let metrics = RouteMetrics::compute_with_threshold(
+            &route,
+            area_poi_count,
+            self.config.metrics_overlap_threshold_m,
+        );
+        route.metrics = Some(metrics);
+
+        route
     }
 
     /// Generate loop routes starting and ending at the same point
@@ -93,11 +142,12 @@ impl RouteGenerator {
                 "No POIs found within {:.1}km radius (limit: {}), attempting geometric fallback",
                 search_radius_km, poi_limit
             );
-            return self
+            let route = self
                 .geometric_loop_generator
                 .generate_geometric_loop(start, target_distance_km, mode)
-                .await
-                .map(|route| vec![route]);
+                .await?;
+            let route = self.enhance_geometric_route(route, preferences, 0).await;
+            return Ok(vec![route]);
         }
 
         // Step 2: Score and filter POIs
@@ -199,10 +249,14 @@ impl RouteGenerator {
             "All {} tolerance levels exhausted with {} candidates for {:.1}km target, falling back to geometric loop",
             tolerance_levels_tried, candidate_pois.len(), target_distance_km
         );
-        self.geometric_loop_generator
+        let route = self
+            .geometric_loop_generator
             .generate_geometric_loop(start, target_distance_km, mode)
-            .await
-            .map(|route| vec![route])
+            .await?;
+        let route = self
+            .enhance_geometric_route(route, preferences, candidate_pois.len())
+            .await;
+        Ok(vec![route])
     }
 }
 
