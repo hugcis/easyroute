@@ -116,6 +116,16 @@ test-one NAME:
 evaluate *ARGS: _ensure-env
     cargo run --bin evaluate -- {{ARGS}}
 
+# Save evaluation baseline
+[group('test')]
+evaluate-baseline *ARGS: _ensure-env
+    cargo run --bin evaluate -- --save-baseline {{ARGS}}
+
+# Check evaluation against baseline (exit 1 on regression)
+[group('test')]
+evaluate-check *ARGS: _ensure-env
+    cargo run --bin evaluate -- --check {{ARGS}}
+
 # ─── Code Quality ─────────────────────────────────────────
 
 # Format code with rustfmt

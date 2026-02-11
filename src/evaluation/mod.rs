@@ -1,8 +1,18 @@
+pub mod baseline;
+pub mod scenarios;
+
+use serde::{Deserialize, Serialize};
+
 use crate::models::{Coordinates, Route, TransportMode};
 use crate::services::route_generator::route_metrics::{PoiDensityContext, RouteMetrics};
 
+pub use baseline::{
+    compare, format_comparison_report, load_baseline, save_baseline, Baseline, ComparisonReport,
+};
+pub use scenarios::default_scenarios;
+
 /// A test scenario for route evaluation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EvalScenario {
     pub name: String,
     pub start: Coordinates,
@@ -12,7 +22,7 @@ pub struct EvalScenario {
 }
 
 /// Aggregated results for a single scenario across N runs
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScenarioResult {
     pub scenario: EvalScenario,
     pub runs: usize,
@@ -22,7 +32,7 @@ pub struct ScenarioResult {
 }
 
 /// Statistical aggregates for each metric dimension
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetricsAggregate {
     pub circularity: StatSummary,
     pub convexity: StatSummary,
@@ -33,7 +43,7 @@ pub struct MetricsAggregate {
 }
 
 /// Mean and standard deviation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatSummary {
     pub mean: f32,
     pub std_dev: f32,
@@ -158,31 +168,4 @@ pub fn format_report(results: &[ScenarioResult]) -> String {
     }
 
     report
-}
-
-/// Default evaluation scenarios for various environments
-pub fn default_scenarios() -> Vec<EvalScenario> {
-    vec![
-        EvalScenario {
-            name: "monaco_3km_walk".to_string(),
-            start: Coordinates::new(43.7384, 7.4246).unwrap(),
-            distance_km: 3.0,
-            mode: TransportMode::Walk,
-            expected_density: PoiDensityContext::Dense,
-        },
-        EvalScenario {
-            name: "monaco_5km_walk".to_string(),
-            start: Coordinates::new(43.7384, 7.4246).unwrap(),
-            distance_km: 5.0,
-            mode: TransportMode::Walk,
-            expected_density: PoiDensityContext::Dense,
-        },
-        EvalScenario {
-            name: "monaco_3km_bike".to_string(),
-            start: Coordinates::new(43.7384, 7.4246).unwrap(),
-            distance_km: 3.0,
-            mode: TransportMode::Bike,
-            expected_density: PoiDensityContext::Dense,
-        },
-    ]
 }

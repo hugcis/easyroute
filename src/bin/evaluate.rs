@@ -1,6 +1,7 @@
 use easyroute::config::Config;
 use easyroute::evaluation::{
-    default_scenarios, format_report, EvalScenario, MetricsAggregate, ScenarioResult,
+    compare, default_scenarios, format_comparison_report, format_report, load_baseline,
+    save_baseline, Baseline, EvalScenario, MetricsAggregate, ScenarioResult,
 };
 use easyroute::models::{Route, RoutePreferences};
 use easyroute::services::mapbox::MapboxClient;
@@ -8,7 +9,28 @@ use easyroute::services::poi_service::PoiService;
 use easyroute::services::route_generator::RouteGenerator;
 use easyroute::services::snapping_service::SnappingService;
 use std::env;
+use std::path::PathBuf;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+const DEFAULT_BASELINE_PATH: &str = "evaluation/baseline.json";
+const DEFAULT_REGRESSION_THRESHOLD: f32 = 0.15;
+
+fn print_help() {
+    eprintln!(
+        "\
+Usage: evaluate [OPTIONS]
+
+Options:
+  --scenario=FILTER     Only run scenarios whose name contains FILTER
+  --runs=N              Number of runs per scenario (default: 3)
+  --json                Output results as JSON
+  --save-baseline       Save results as baseline to evaluation/baseline.json
+  --check               Compare results against saved baseline (exit 1 on regression)
+  --regression-threshold=F
+                        Regression threshold as fraction (default: 0.15 = 15%)
+  --help                Show this help message"
+    );
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,10 +43,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let config = Config::from_env().map_err(|e| format!("Config error: {}", e))?;
-
     // Parse CLI args
     let args: Vec<String> = env::args().collect();
+
+    if args.iter().any(|a| a == "--help") {
+        print_help();
+        return Ok(());
+    }
+
     let scenario_filter = args.iter().find_map(|a| a.strip_prefix("--scenario="));
     let runs: usize = args
         .iter()
@@ -32,6 +58,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(3);
     let json_output = args.iter().any(|a| a == "--json");
+    let save_baseline_flag = args.iter().any(|a| a == "--save-baseline");
+    let check_flag = args.iter().any(|a| a == "--check");
+    let regression_threshold: f32 = args
+        .iter()
+        .find_map(|a| a.strip_prefix("--regression-threshold="))
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(DEFAULT_REGRESSION_THRESHOLD);
+
+    let config = Config::from_env().map_err(|e| format!("Config error: {}", e))?;
 
     // Connect to database
     let db_pool = easyroute::db::create_pool(&config.database_url).await?;
@@ -74,6 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         runs
     );
 
+    // Run evaluation
     let mut results = Vec::new();
     let preferences = RoutePreferences::default();
 
@@ -116,8 +152,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    // Handle --save-baseline
+    if save_baseline_flag {
+        let baseline = Baseline::from_results(&results, runs);
+        let path = PathBuf::from(DEFAULT_BASELINE_PATH);
+        save_baseline(&baseline, &path)?;
+        eprintln!("Baseline saved to {}", path.display());
+    }
+
+    // Handle --check
+    if check_flag {
+        let path = PathBuf::from(DEFAULT_BASELINE_PATH);
+        let baseline = load_baseline(&path)?;
+        let report = compare(&baseline, &results, regression_threshold);
+
+        if json_output {
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        } else {
+            print!("{}", format_comparison_report(&report));
+        }
+
+        if report.total_regressions > 0 {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
+    // Standard output
     if json_output {
-        // Simple JSON output for programmatic consumption
         let json_results: Vec<serde_json::Value> = results
             .iter()
             .map(|r| {

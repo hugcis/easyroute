@@ -38,7 +38,7 @@ dotenv = "0.15"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-time = { version = "0.3", features = ["serde"] }
+time = { version = "0.3", features = ["serde", "formatting"] }
 urlencoding = "2"
 rand = "0.8"
 
