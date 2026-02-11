@@ -151,6 +151,102 @@ impl AdvancedStrategy {
 
         max_penalty
     }
+
+    /// Loop shape predictor: estimate convex hull area of [start, selected..., candidate]
+    /// Returns a 0-1 score where higher = better loop coverage
+    fn loop_shape_score(start: &Coordinates, candidate: &Poi, already_selected: &[Poi]) -> f32 {
+        if already_selected.is_empty() {
+            return 0.5; // Neutral for first selection
+        }
+
+        // Build point set: start + selected + candidate
+        let mut points: Vec<(f64, f64)> = Vec::with_capacity(already_selected.len() + 2);
+        points.push((start.lng, start.lat));
+        for poi in already_selected {
+            points.push((poi.coordinates.lng, poi.coordinates.lat));
+        }
+        points.push((candidate.coordinates.lng, candidate.coordinates.lat));
+
+        let area_with = convex_hull_area(&points);
+
+        // Compare to area without candidate
+        points.pop();
+        let area_without = convex_hull_area(&points);
+
+        // Score based on how much the candidate increases the hull area
+        if area_without < 1e-15 {
+            // All points collinear without candidate - any area increase is good
+            return if area_with > 1e-15 { 1.0 } else { 0.0 };
+        }
+
+        let area_ratio = area_with / area_without;
+        // Ratio > 1 means candidate expands the hull (good for round loops)
+        // Normalize: ratio of 1.0 = no expansion (0.0), ratio of 2.0+ = max (1.0)
+        ((area_ratio - 1.0) as f32).clamp(0.0, 1.0)
+    }
+}
+
+/// Compute area of convex hull of points using Andrew's monotone chain
+fn convex_hull_area(points: &[(f64, f64)]) -> f64 {
+    if points.len() < 3 {
+        return 0.0;
+    }
+
+    let mut sorted = points.to_vec();
+    sorted.sort_by(|a, b| {
+        a.0.partial_cmp(&b.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+    });
+    sorted.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-12 && (a.1 - b.1).abs() < 1e-12);
+
+    if sorted.len() < 3 {
+        return 0.0;
+    }
+
+    let n = sorted.len();
+    let mut hull: Vec<(f64, f64)> = Vec::with_capacity(2 * n);
+
+    // Lower hull
+    for &point in &sorted {
+        while hull.len() >= 2 {
+            let (ox, oy) = hull[hull.len() - 2];
+            let (ax, ay) = hull[hull.len() - 1];
+            if (ax - ox) * (point.1 - oy) - (ay - oy) * (point.0 - ox) <= 0.0 {
+                hull.pop();
+            } else {
+                break;
+            }
+        }
+        hull.push(point);
+    }
+
+    // Upper hull
+    let lower_len = hull.len() + 1;
+    for &point in sorted.iter().rev().skip(1) {
+        while hull.len() >= lower_len {
+            let (ox, oy) = hull[hull.len() - 2];
+            let (ax, ay) = hull[hull.len() - 1];
+            if (ax - ox) * (point.1 - oy) - (ay - oy) * (point.0 - ox) <= 0.0 {
+                hull.pop();
+            } else {
+                break;
+            }
+        }
+        hull.push(point);
+    }
+
+    hull.pop();
+
+    // Shoelace area
+    let mut area = 0.0;
+    let hn = hull.len();
+    for i in 0..hn {
+        let j = (i + 1) % hn;
+        area += hull[i].0 * hull[j].1;
+        area -= hull[j].0 * hull[i].1;
+    }
+    (area / 2.0).abs()
 }
 
 impl PoiScoringStrategy for AdvancedStrategy {
@@ -191,10 +287,16 @@ impl PoiScoringStrategy for AdvancedStrategy {
                 let quality_score = poi.quality_score(context.preferences.hidden_gems) / 100.0;
                 score += quality_score * self.config.poi_score_weight_quality;
 
-                // 3. Angular diversity score (weighted by config)
+                // 3. Angular diversity score (half of angular weight)
                 let angle = Self::calculate_angle(context.start, poi);
                 let angular_score = Self::angular_diversity_score(angle, &selected_angles);
-                score += angular_score * self.config.poi_score_weight_angular;
+                let angular_half = self.config.poi_score_weight_angular / 2.0;
+                score += angular_score * angular_half;
+
+                // 3b. Loop shape predictor (other half of angular weight)
+                let shape_score =
+                    Self::loop_shape_score(context.start, poi, context.already_selected);
+                score += shape_score * angular_half;
 
                 // 4. Cluster penalty (weighted by config)
                 let cluster_pen = Self::cluster_penalty(

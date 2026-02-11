@@ -41,6 +41,7 @@ impl ToleranceStrategy {
     }
 
     /// Try to generate routes with a specific tolerance level
+    #[allow(clippy::too_many_arguments)]
     pub async fn try_generate_routes_with_tolerance(
         &self,
         start: &Coordinates,
@@ -49,6 +50,7 @@ impl ToleranceStrategy {
         mode: &TransportMode,
         candidate_pois: &[Poi],
         preferences: &RoutePreferences,
+        seed_offset: usize,
     ) -> Vec<Route> {
         let max_alternatives = preferences
             .max_alternatives
@@ -63,7 +65,7 @@ impl ToleranceStrategy {
                 distance_tolerance,
                 mode,
                 candidate_pois,
-                attempt_seed: attempt,
+                attempt_seed: attempt + seed_offset,
                 preferences,
             };
 
@@ -77,6 +79,15 @@ impl ToleranceStrategy {
                     );
                 }
             }
+        }
+
+        if routes.is_empty() {
+            tracing::warn!(
+                tolerance_km = %format!("{:.2}", distance_tolerance),
+                attempts = max_alternatives,
+                "Tolerance level exhausted: 0/{} attempts produced valid routes (target: {:.1}km ± {:.2}km)",
+                max_alternatives, target_distance_km, distance_tolerance
+            );
         }
 
         // Score and rank routes if we got any
@@ -119,11 +130,37 @@ impl ToleranceStrategy {
 
             // Order POIs geographically before building waypoints to prevent backtracking
             let ordered_pois = WaypointSelector::order_pois_clockwise(params.start, &selected_pois);
+
+            // Verify loop shape before calling Mapbox (saves API calls on bad configurations)
+            if !WaypointSelector::verify_loop_shape(params.start, &ordered_pois, retry) {
+                tracing::info!(
+                    retry = retry + 1,
+                    waypoint_count = ordered_pois.len(),
+                    "Retry {}: skipped — poor loop shape with {} waypoints",
+                    retry + 1,
+                    ordered_pois.len()
+                );
+                continue;
+            }
+
             let waypoints = Self::build_loop_waypoints(params.start, &ordered_pois);
-            let directions = self
+            let directions = match self
                 .mapbox_client
                 .get_directions(&waypoints, params.mode)
-                .await?;
+                .await
+            {
+                Ok(d) => d,
+                Err(e) => {
+                    tracing::warn!(
+                        retry = retry + 1,
+                        error = %e,
+                        waypoint_count = waypoints.len(),
+                        "Mapbox API call failed on retry {}: {}",
+                        retry + 1, e
+                    );
+                    return Err(e);
+                }
+            };
             let distance_km = directions.distance_km();
 
             // Check if distance is within tolerance
@@ -137,24 +174,27 @@ impl ToleranceStrategy {
                 );
                 return self
                     .route_scorer
-                    .build_route(directions, ordered_pois, params.preferences)
+                    .build_route(
+                        directions,
+                        ordered_pois,
+                        params.preferences,
+                        params.candidate_pois.len(),
+                    )
                     .await;
             }
 
             // If not within tolerance, log and retry with different POIs
-            if retry < self.config.max_route_generation_retries - 1 {
-                let error_pct = (distance_km - params.target_distance_km).abs()
-                    / params.target_distance_km
-                    * 100.0;
-                tracing::debug!(
-                    "Attempt {} failed: {}km outside tolerance ({}km - {}km), error: {:.1}%",
-                    retry + 1,
-                    distance_km,
-                    min_distance,
-                    max_distance,
-                    error_pct
-                );
-            }
+            let error_pct =
+                (distance_km - params.target_distance_km).abs() / params.target_distance_km * 100.0;
+            tracing::info!(
+                retry = retry + 1,
+                achieved_km = %format!("{:.2}", distance_km),
+                target_km = %format!("{:.1}", params.target_distance_km),
+                tolerance_range = %format!("{:.2}-{:.2}", min_distance, max_distance),
+                error_pct = %format!("{:.1}", error_pct),
+                "Retry {}: {:.2}km outside tolerance {:.2}-{:.2}km ({:.1}% off target)",
+                retry + 1, distance_km, min_distance, max_distance, error_pct
+            );
         }
 
         // All retries exhausted

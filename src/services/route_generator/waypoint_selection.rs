@@ -109,7 +109,7 @@ impl WaypointSelector {
         let mut selected: Vec<Poi> = Vec::new();
         let mut remaining_pois: Vec<Poi> = pois.to_vec();
 
-        for _iteration in 0..num_waypoints {
+        for iteration in 0..num_waypoints {
             if remaining_pois.is_empty() {
                 break;
             }
@@ -129,16 +129,25 @@ impl WaypointSelector {
 
             // Fallback if no POIs scored
             if scored_pois.is_empty() {
-                tracing::warn!("No POIs scored in iteration, using fallback");
+                tracing::warn!(
+                    iteration = iteration,
+                    remaining_pois = remaining_pois.len(),
+                    min_distance_km = %format!("{:.2}", self.config.min_poi_distance_km),
+                    max_distance_mult = self.config.max_poi_distance_multiplier,
+                    "No POIs scored in iteration {} ({} remaining, filter: min {:.2}km, max mult {:.1}x), using fallback",
+                    iteration, remaining_pois.len(), self.config.min_poi_distance_km, self.config.max_poi_distance_multiplier
+                );
                 scored_pois = self.fallback_score_closest_pois(start, &remaining_pois, 1)?;
             }
 
             // If still no POIs after fallback, break the loop
             if scored_pois.is_empty() {
                 tracing::warn!(
-                    "No POIs available after fallback (selected: {}, remaining: {})",
-                    selected.len(),
-                    remaining_pois.len()
+                    iteration = iteration,
+                    selected = selected.len(),
+                    remaining = remaining_pois.len(),
+                    "No POIs available after fallback in iteration {} (selected: {}, remaining: {})",
+                    iteration, selected.len(), remaining_pois.len()
                 );
                 break;
             }
@@ -281,6 +290,61 @@ impl WaypointSelector {
                 Some((score + (idx as f32 * 0.01), poi))
             })
             .collect())
+    }
+
+    /// Verify that clockwise-ordered waypoints form a good loop shape.
+    /// Checks that consecutive waypoints have minimum angular separation
+    /// to prevent out-and-back routes.
+    /// The `retry` parameter progressively relaxes the threshold:
+    /// - Retry 0-1: full threshold (strict)
+    /// - Retry 2: 80% threshold
+    /// - Retry 3: 60% threshold
+    /// - Retry 4+: 40% threshold
+    ///
+    /// Returns true if the shape is acceptable.
+    pub fn verify_loop_shape(start: &Coordinates, ordered_pois: &[Poi], retry: usize) -> bool {
+        if ordered_pois.len() < 2 {
+            return true;
+        }
+
+        let num_waypoints = ordered_pois.len();
+        let base_min_gap = std::f64::consts::PI / (num_waypoints as f64 + 1.0);
+        let relaxation = (retry.saturating_sub(1) as f64 * 0.2).min(0.6);
+        let min_gap = base_min_gap * (1.0 - relaxation);
+
+        // Calculate angles for each POI
+        let angles: Vec<f64> = ordered_pois
+            .iter()
+            .map(|poi| {
+                let dx = poi.coordinates.lng - start.lng;
+                let dy = poi.coordinates.lat - start.lat;
+                dy.atan2(dx)
+            })
+            .collect();
+
+        // Check consecutive angular gaps (including wrap-around)
+        for i in 0..angles.len() {
+            let j = (i + 1) % angles.len();
+            let mut diff = angles[j] - angles[i];
+
+            // Normalize to [0, 2*PI)
+            if diff < 0.0 {
+                diff += 2.0 * std::f64::consts::PI;
+            }
+
+            if diff < min_gap {
+                tracing::debug!(
+                    "Loop shape rejected: angular gap {:.2} rad between waypoints {} and {} is below minimum {:.2} rad",
+                    diff,
+                    i,
+                    j,
+                    min_gap
+                );
+                return false;
+            }
+        }
+
+        true
     }
 
     /// Check if POIs are spatially distributed (not clustered together)
@@ -466,6 +530,105 @@ mod tests {
             selector.calculate_waypoint_count(8.1, 10, 1),
             4,
             "Above threshold, should use long route settings (4 for odd seed)"
+        );
+    }
+
+    #[test]
+    fn test_verify_loop_shape_well_distributed() {
+        use crate::models::PoiCategory;
+
+        let start = Coordinates::new(48.8566, 2.3522).unwrap();
+
+        // 3 POIs spread evenly around start (120 degrees apart)
+        let pois = vec![
+            Poi::new(
+                "North".to_string(),
+                PoiCategory::Monument,
+                Coordinates::new(48.87, 2.35).unwrap(),
+                80.0,
+            ),
+            Poi::new(
+                "SE".to_string(),
+                PoiCategory::Park,
+                Coordinates::new(48.85, 2.37).unwrap(),
+                70.0,
+            ),
+            Poi::new(
+                "SW".to_string(),
+                PoiCategory::Museum,
+                Coordinates::new(48.85, 2.33).unwrap(),
+                60.0,
+            ),
+        ];
+
+        let ordered = WaypointSelector::order_pois_clockwise(&start, &pois);
+        assert!(
+            WaypointSelector::verify_loop_shape(&start, &ordered, 0),
+            "Well-distributed POIs should pass loop shape verification"
+        );
+    }
+
+    #[test]
+    fn test_verify_loop_shape_clustered() {
+        use crate::models::PoiCategory;
+
+        let start = Coordinates::new(48.8566, 2.3522).unwrap();
+
+        // 3 POIs all very close together (same direction from start)
+        let pois = vec![
+            Poi::new(
+                "A".to_string(),
+                PoiCategory::Monument,
+                Coordinates::new(48.87, 2.352).unwrap(),
+                80.0,
+            ),
+            Poi::new(
+                "B".to_string(),
+                PoiCategory::Park,
+                Coordinates::new(48.871, 2.3521).unwrap(),
+                70.0,
+            ),
+            Poi::new(
+                "C".to_string(),
+                PoiCategory::Museum,
+                Coordinates::new(48.872, 2.3522).unwrap(),
+                60.0,
+            ),
+        ];
+
+        let ordered = WaypointSelector::order_pois_clockwise(&start, &pois);
+        assert!(
+            !WaypointSelector::verify_loop_shape(&start, &ordered, 0),
+            "Clustered POIs should fail loop shape verification"
+        );
+    }
+
+    #[test]
+    fn test_verify_loop_shape_two_pois() {
+        use crate::models::PoiCategory;
+
+        let start = Coordinates::new(48.8566, 2.3522).unwrap();
+
+        // 2 POIs on opposite sides - should pass
+        let pois = vec![
+            Poi::new(
+                "N".to_string(),
+                PoiCategory::Monument,
+                Coordinates::new(48.87, 2.35).unwrap(),
+                80.0,
+            ),
+            Poi::new(
+                "S".to_string(),
+                PoiCategory::Park,
+                Coordinates::new(48.84, 2.35).unwrap(),
+                70.0,
+            ),
+        ];
+
+        let ordered = WaypointSelector::order_pois_clockwise(&start, &pois);
+        assert!(
+            WaypointSelector::verify_loop_shape(&start, &ordered, 0),
+            "Opposite POIs should pass loop shape verification"
         );
     }
 }

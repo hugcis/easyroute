@@ -86,7 +86,13 @@ impl RouteGenerator {
 
         if raw_pois.is_empty() {
             // Try geometric fallback if no POIs
-            tracing::warn!("No POIs found, attempting geometric loop fallback");
+            tracing::warn!(
+                search_radius_km = %format!("{:.2}", search_radius_km),
+                poi_limit = poi_limit,
+                categories = ?preferences.poi_categories,
+                "No POIs found within {:.1}km radius (limit: {}), attempting geometric fallback",
+                search_radius_km, poi_limit
+            );
             return self
                 .geometric_loop_generator
                 .generate_geometric_loop(start, target_distance_km, mode)
@@ -97,13 +103,21 @@ impl RouteGenerator {
         // Step 2: Score and filter POIs
         // Scale candidate limit with distance: 5km→50, 9km→90, 15km→100
         let candidate_limit = (target_distance_km * 10.0).clamp(20.0, 100.0) as usize;
+        let raw_count = raw_pois.len();
         let candidate_pois = self.poi_service.score_and_filter_pois(
             raw_pois,
             preferences.hidden_gems,
             candidate_limit,
         );
 
-        tracing::debug!("Found {} candidate POIs", candidate_pois.len());
+        tracing::info!(
+            raw_pois = raw_count,
+            candidates = candidate_pois.len(),
+            filtered_out = raw_count - candidate_pois.len(),
+            search_radius_km = %format!("{:.2}", search_radius_km),
+            "POI discovery: {} raw -> {} candidates ({} filtered out) within {:.1}km",
+            raw_count, candidate_pois.len(), raw_count - candidate_pois.len(), search_radius_km
+        );
 
         // Step 3: Try with progressively relaxed tolerance levels
         let relaxed_str = format!(
@@ -115,7 +129,7 @@ impl RouteGenerator {
             (self.config.tolerance_level_very_relaxed * 100.0) as i32
         );
 
-        let tolerance_levels = vec![
+        let tolerance_levels = [
             (distance_tolerance, "normal"),
             (
                 target_distance_km * self.config.tolerance_level_relaxed,
@@ -127,21 +141,39 @@ impl RouteGenerator {
             ),
         ];
 
-        for (tolerance, tolerance_name) in tolerance_levels {
+        let max_alternatives = preferences.max_alternatives.clamp(
+            crate::constants::MIN_ALTERNATIVES_FOR_SUCCESS,
+            crate::constants::MAX_ALTERNATIVES_CLAMP,
+        ) as usize;
+
+        let mut tolerance_levels_tried = 0;
+        for (level_index, (tolerance, tolerance_name)) in tolerance_levels.iter().enumerate() {
+            tolerance_levels_tried += 1;
+            tracing::info!(
+                tolerance_name = tolerance_name,
+                tolerance_km = %format!("{:.2}", tolerance),
+                target_km = %format!("{:.1}", target_distance_km),
+                candidates = candidate_pois.len(),
+                "Trying {} tolerance: {:.1}km ± {:.2}km",
+                tolerance_name, target_distance_km, tolerance
+            );
+
+            let seed_offset = level_index * max_alternatives;
             let routes = self
                 .tolerance_strategy
                 .try_generate_routes_with_tolerance(
                     &start,
                     target_distance_km,
-                    tolerance,
+                    *tolerance,
                     mode,
                     &candidate_pois,
                     preferences,
+                    seed_offset,
                 )
                 .await;
 
             if !routes.is_empty() {
-                if tolerance_name != "normal" {
+                if *tolerance_name != "normal" {
                     tracing::info!(
                         "Successfully generated routes with {} tolerance",
                         tolerance_name
@@ -150,30 +182,27 @@ impl RouteGenerator {
                 return Ok(routes);
             }
 
-            if tolerance_name != "very relaxed (±30%)" {
+            if *tolerance_name != very_relaxed_str.as_str() {
                 tracing::warn!(
+                    tolerance = *tolerance_name,
                     "Failed with {} tolerance, trying next level",
                     tolerance_name
                 );
             }
         }
 
-        // Step 4: Final fallback - geometric loop
-        if candidate_pois.len() < 2 {
-            tracing::warn!(
-                "Only {} POI(s) and no valid routes found, falling back to geometric loop",
-                candidate_pois.len()
-            );
-            return self
-                .geometric_loop_generator
-                .generate_geometric_loop(start, target_distance_km, mode)
-                .await
-                .map(|route| vec![route]);
-        }
-
-        Err(crate::error::AppError::RouteGeneration(
-            "Failed to generate any valid routes even with relaxed tolerance".to_string(),
-        ))
+        // Step 4: Final fallback - geometric loop (always attempt, never return 500)
+        tracing::warn!(
+            candidates = candidate_pois.len(),
+            tolerance_levels_tried = tolerance_levels_tried,
+            target_km = %format!("{:.1}", target_distance_km),
+            "All {} tolerance levels exhausted with {} candidates for {:.1}km target, falling back to geometric loop",
+            tolerance_levels_tried, candidate_pois.len(), target_distance_km
+        );
+        self.geometric_loop_generator
+            .generate_geometric_loop(start, target_distance_km, mode)
+            .await
+            .map(|route| vec![route])
     }
 }
 

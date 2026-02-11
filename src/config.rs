@@ -143,7 +143,7 @@ impl Default for RouteGeneratorConfig {
             poi_min_separation_km: 0.3,
             poi_score_weight_distance: 0.6, // Increased from 0.4 - distance is critical
             poi_score_weight_quality: 0.2,  // Decreased from 0.3
-            poi_score_weight_angular: 0.1,  // Decreased from 0.15
+            poi_score_weight_angular: 0.2, // Increased for loop quality (split: angular diversity + loop shape)
             poi_score_weight_clustering: 0.05, // Decreased from 0.1
             poi_score_weight_variation: 0.05, // Same
             metrics_overlap_threshold_m: 25.0,
