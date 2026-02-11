@@ -183,7 +183,53 @@ async fn test_route_generation() {
 
 ---
 
-### 5. Type Safety Across Boundaries
+### 5. Regression Detection for Routing Changes
+
+**Any change to routing logic or config parameters must be validated against the evaluation baseline.**
+
+This applies to changes in:
+- `src/services/route_generator/` (waypoint selection, scoring, tolerance, geometric fallback)
+- `src/services/route_generator/route_metrics.rs` (metric computation)
+- `src/services/route_generator/route_scoring.rs` (scoring weights/formulas)
+- `src/config.rs` (route generator config defaults or new parameters)
+- `src/services/snapping_service.rs` (POI snapping logic)
+
+#### Workflow
+
+```bash
+# 1. Before making changes, ensure a baseline exists
+#    (skip if evaluation/baseline.json already exists and is current)
+just evaluate-baseline --runs=3
+
+# 2. Make your changes to routing logic / config
+
+# 3. Check for regressions against the saved baseline
+just evaluate-check --runs=3
+
+# 4. If metrics improved and you want to update the baseline
+just evaluate-baseline --runs=5
+```
+
+#### What Gets Checked
+
+The evaluation harness runs 10 scenarios (dense/moderate/sparse/geometric, various distances and modes) and compares each metric against the baseline with a 15% regression threshold:
+- **Higher-is-better**: circularity, convexity, POI density, category entropy, landmark coverage, success rate
+- **Lower-is-better**: path overlap percentage
+
+A regression is flagged when a metric worsens beyond the threshold. `--check` exits with code 1 if any regressions are detected.
+
+#### Key Commands
+
+```bash
+just evaluate-check --runs=3              # Quick regression check
+just evaluate-check --runs=3 --json       # Machine-readable output
+just evaluate-baseline --runs=5           # Save new baseline after improvements
+cargo run --bin evaluate -- --help        # See all flags
+```
+
+---
+
+### 6. Type Safety Across Boundaries
 
 **Leverage Rust's type system at all boundaries.**
 
@@ -284,7 +330,7 @@ impl MapboxClient {
 
 ---
 
-### 6. Automated Code Quality
+### 7. Automated Code Quality
 
 **All code must pass automated quality checks before commit.**
 
@@ -397,7 +443,7 @@ cargo clippy -- -D warnings || exit 1
 
 ---
 
-### 7. Clear, Focused Documentation
+### 8. Clear, Focused Documentation
 
 **Every public module, struct, and function should have doc comments.**
 
