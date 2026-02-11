@@ -38,14 +38,14 @@ build:
 
 # Run the server (requires services to be running)
 run: _ensure-env services-up
-    cargo run
+    cargo run --bin easyroute
 
 # Start server with auto-reload and open visualizer
 serve: _ensure-env services-up
     @echo "Starting server with auto-reload..."
     @echo "Opening visualizer in browser..."
     @sleep 1 && open scripts/visualize.html &
-    cargo watch -x run
+    cargo watch -x 'run --bin easyroute'
 
 # Run cargo-watch for fast compilation feedback
 watch:
@@ -127,6 +127,19 @@ reset-db:
 import REGION:
     ./osm/download_osm.sh {{REGION}}
     ./osm/import_osm.sh ./osm/data/{{REGION}}-latest.osm.pbf
+
+# ─── Evaluation ──────────────────────────────────────────
+
+# Run the evaluation harness (e.g. just evaluate --scenario=monaco --runs=5 --json)
+evaluate *ARGS: _ensure-env
+    cargo run --bin evaluate -- {{ARGS}}
+
+# ─── Cache ───────────────────────────────────────────────
+
+# Flush the Redis cache
+flush-cache:
+    docker exec easyroute_redis redis-cli FLUSHDB
+    @echo "Redis cache flushed."
 
 # ─── API Shortcuts ────────────────────────────────────────
 
