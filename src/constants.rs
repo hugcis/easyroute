@@ -28,6 +28,9 @@ pub const VARIATION_OFFSET_BASE: usize = 11;
 pub const VARIATION_MOD: usize = 100;
 pub const VARIATION_SCORE_FACTOR: f32 = 0.05;
 
+// In-memory cache defaults
+pub const DEFAULT_MEMORY_CACHE_MAX_ENTRIES: u64 = 1_000;
+
 // Distance correction feedback loop
 pub const DISTANCE_CORRECTION_DAMPING: f64 = 0.7;
 pub const DISTANCE_CORRECTION_MIN: f64 = 0.5;
