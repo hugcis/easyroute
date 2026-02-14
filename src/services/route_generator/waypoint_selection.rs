@@ -4,6 +4,7 @@ use crate::error::{AppError, Result};
 use crate::models::{Coordinates, Poi, RoutePreferences};
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
+use super::geometry::angle_from_start;
 use super::scoring_strategy::{
     AdvancedStrategy, PoiScoringStrategy, ScoringContext, SimpleStrategy,
 };
@@ -188,10 +189,7 @@ impl WaypointSelector {
         let mut pois_with_angles: Vec<(f64, Poi)> = pois
             .iter()
             .map(|poi| {
-                // Calculate angle from start point
-                let dx = poi.coordinates.lng - start.lng;
-                let dy = poi.coordinates.lat - start.lat;
-                let angle = dy.atan2(dx); // Returns angle in radians (-π to π)
+                let angle = angle_from_start(start, &poi.coordinates);
                 (angle, poi.clone())
             })
             .collect();
@@ -322,11 +320,7 @@ impl WaypointSelector {
         // Calculate angles for each POI
         let angles: Vec<f64> = ordered_pois
             .iter()
-            .map(|poi| {
-                let dx = poi.coordinates.lng - start.lng;
-                let dy = poi.coordinates.lat - start.lat;
-                dy.atan2(dx)
-            })
+            .map(|poi| angle_from_start(start, &poi.coordinates))
             .collect();
 
         // Check consecutive angular gaps (including wrap-around)
@@ -364,11 +358,7 @@ impl WaypointSelector {
         // Calculate angles from start to each POI
         let angles: Vec<f64> = pois
             .iter()
-            .map(|poi| {
-                let dx = poi.coordinates.lng - start.lng;
-                let dy = poi.coordinates.lat - start.lat;
-                dy.atan2(dx)
-            })
+            .map(|poi| angle_from_start(start, &poi.coordinates))
             .collect();
 
         // Check minimum angle difference (should be at least 60 degrees for 3 POIs)

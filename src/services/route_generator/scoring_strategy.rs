@@ -1,3 +1,4 @@
+use super::geometry::{angle_from_start, convex_hull_area};
 use crate::config::RouteGeneratorConfig;
 use crate::constants::*;
 use crate::models::{Coordinates, Poi, RoutePreferences};
@@ -40,10 +41,10 @@ impl SimpleStrategy {
         if actual_dist < target_dist {
             let ratio = (actual_dist / target_dist) as f32;
             // Blend factor: 0.0 for ≤12km, 1.0 for ≥15km
-            let blend = ((target_distance_km - 12.0) / 3.0).clamp(0.0, 1.0) as f32;
+            let distance_blend_factor = ((target_distance_km - 12.0) / 3.0).clamp(0.0, 1.0) as f32;
             let lenient = ratio * 0.8 + 0.2; // original formula
             let strict = ratio * ratio; // quadratic penalty
-            lenient * (1.0 - blend) + strict * blend
+            lenient * (1.0 - distance_blend_factor) + strict * distance_blend_factor
         } else {
             // POIs farther than ideal are penalized more gradually
             let excess_ratio = (actual_dist - target_dist) / target_dist;
@@ -111,10 +112,10 @@ impl AdvancedStrategy {
     ) -> f32 {
         if actual_dist < target_dist {
             let ratio = (actual_dist / target_dist) as f32;
-            let blend = ((target_distance_km - 5.0) / 7.0).clamp(0.0, 1.0) as f32;
+            let distance_blend_factor = ((target_distance_km - 5.0) / 7.0).clamp(0.0, 1.0) as f32;
             let lenient = ratio * 0.8 + 0.2;
             let strict = ratio * ratio;
-            lenient * (1.0 - blend) + strict * blend
+            lenient * (1.0 - distance_blend_factor) + strict * distance_blend_factor
         } else {
             let excess_ratio = (actual_dist - target_dist) / target_dist;
             (1.0 - (excess_ratio * 0.5).min(0.8)) as f32
@@ -126,13 +127,6 @@ impl AdvancedStrategy {
         ((poi_index * VARIATION_MULTIPLIER + attempt_seed * VARIATION_OFFSET_BASE) % VARIATION_MOD)
             as f32
             * VARIATION_SCORE_FACTOR
-    }
-
-    /// Calculate angle from start to POI (in radians)
-    fn calculate_angle(start: &Coordinates, poi: &Poi) -> f64 {
-        let dx = poi.coordinates.lng - start.lng;
-        let dy = poi.coordinates.lat - start.lat;
-        dy.atan2(dx) // Returns angle in radians (-π to π)
     }
 
     /// Calculate angular diversity score
@@ -183,12 +177,12 @@ impl AdvancedStrategy {
         }
 
         // Build point set: start + selected + candidate
-        let mut points: Vec<(f64, f64)> = Vec::with_capacity(already_selected.len() + 2);
-        points.push((start.lng, start.lat));
+        let mut points: Vec<Coordinates> = Vec::with_capacity(already_selected.len() + 2);
+        points.push(*start);
         for poi in already_selected {
-            points.push((poi.coordinates.lng, poi.coordinates.lat));
+            points.push(poi.coordinates);
         }
-        points.push((candidate.coordinates.lng, candidate.coordinates.lat));
+        points.push(candidate.coordinates);
 
         let area_with = convex_hull_area(&points);
 
@@ -209,69 +203,6 @@ impl AdvancedStrategy {
     }
 }
 
-/// Compute area of convex hull of points using Andrew's monotone chain
-fn convex_hull_area(points: &[(f64, f64)]) -> f64 {
-    if points.len() < 3 {
-        return 0.0;
-    }
-
-    let mut sorted = points.to_vec();
-    sorted.sort_by(|a, b| {
-        a.0.partial_cmp(&b.0)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-    });
-    sorted.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-12 && (a.1 - b.1).abs() < 1e-12);
-
-    if sorted.len() < 3 {
-        return 0.0;
-    }
-
-    let n = sorted.len();
-    let mut hull: Vec<(f64, f64)> = Vec::with_capacity(2 * n);
-
-    // Lower hull
-    for &point in &sorted {
-        while hull.len() >= 2 {
-            let (ox, oy) = hull[hull.len() - 2];
-            let (ax, ay) = hull[hull.len() - 1];
-            if (ax - ox) * (point.1 - oy) - (ay - oy) * (point.0 - ox) <= 0.0 {
-                hull.pop();
-            } else {
-                break;
-            }
-        }
-        hull.push(point);
-    }
-
-    // Upper hull
-    let lower_len = hull.len() + 1;
-    for &point in sorted.iter().rev().skip(1) {
-        while hull.len() >= lower_len {
-            let (ox, oy) = hull[hull.len() - 2];
-            let (ax, ay) = hull[hull.len() - 1];
-            if (ax - ox) * (point.1 - oy) - (ay - oy) * (point.0 - ox) <= 0.0 {
-                hull.pop();
-            } else {
-                break;
-            }
-        }
-        hull.push(point);
-    }
-
-    hull.pop();
-
-    // Shoelace area
-    let mut area = 0.0;
-    let hn = hull.len();
-    for i in 0..hn {
-        let j = (i + 1) % hn;
-        area += hull[i].0 * hull[j].1;
-        area -= hull[j].0 * hull[i].1;
-    }
-    (area / 2.0).abs()
-}
-
 impl PoiScoringStrategy for AdvancedStrategy {
     fn score_pois<'a>(&self, pois: &'a [Poi], context: &ScoringContext) -> Vec<(f32, &'a Poi)> {
         // Adaptive distance filtering - stricter for route accuracy
@@ -286,7 +217,7 @@ impl PoiScoringStrategy for AdvancedStrategy {
         let selected_angles: Vec<f64> = context
             .already_selected
             .iter()
-            .map(|poi| Self::calculate_angle(context.start, poi))
+            .map(|poi| angle_from_start(context.start, &poi.coordinates))
             .collect();
 
         pois.iter()
@@ -314,7 +245,7 @@ impl PoiScoringStrategy for AdvancedStrategy {
                 score += quality_score * self.config.poi_score_weight_quality;
 
                 // 3. Angular diversity score (half of angular weight)
-                let angle = Self::calculate_angle(context.start, poi);
+                let angle = angle_from_start(context.start, &poi.coordinates);
                 let angular_score = Self::angular_diversity_score(angle, &selected_angles);
                 let angular_half = self.config.poi_score_weight_angular / 2.0;
                 score += angular_score * angular_half;
