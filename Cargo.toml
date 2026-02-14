@@ -9,7 +9,7 @@ license = "MIT"
 # Web framework
 axum = "0.8"
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -28,9 +28,11 @@ reqwest = { version = "0.12", features = ["json"] }
 # Geospatial
 geo = "0.32"
 geojson = "0.24"
+osmpbf = { version = "0.3", optional = true }
 
 # Caching
 redis = { version = "1.0", features = ["tokio-comp", "connection-manager"] }
+moka = { version = "0.12", features = ["future"] }
 
 # Utilities
 uuid = { version = "1", features = ["serde", "v4"] }
@@ -41,6 +43,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 time = { version = "0.3", features = ["serde", "formatting"] }
 urlencoding = "2"
 rand = "0.8"
+async-trait = "0.1"
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -58,3 +61,21 @@ path = "src/main.rs"
 [[bin]]
 name = "evaluate"
 path = "src/bin/evaluate.rs"
+
+[[bin]]
+name = "proxy"
+path = "src/bin/proxy.rs"
+
+[[bin]]
+name = "build_region"
+path = "src/bin/build_region.rs"
+required-features = ["sqlite"]
+
+[[bin]]
+name = "ondevice"
+path = "src/bin/ondevice.rs"
+required-features = ["sqlite"]
+
+[features]
+default = []
+sqlite = ["sqlx/sqlite", "osmpbf"]

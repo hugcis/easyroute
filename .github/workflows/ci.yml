@@ -97,6 +97,35 @@ jobs:
       - name: Run integration tests
         run: cargo test --test '*' --verbose
 
+  test-sqlite:
+    name: SQLite Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ci-sqlite"
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+          cache-on-failure: true
+
+      - name: Clippy (sqlite feature)
+        run: cargo clippy --features sqlite -- -D warnings
+
+      - name: Run SQLite tests
+        run: cargo test --features sqlite --lib db::sqlite_repo --verbose
+
+      - name: Build ondevice binary
+        run: cargo build --features sqlite --bin ondevice
+
   check:
     name: Cargo Check
     runs-on: ubuntu-latest

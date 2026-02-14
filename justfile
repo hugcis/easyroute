@@ -84,6 +84,31 @@ watch:
 check-compile:
     cargo check
 
+# Build with SQLite support
+[group('dev')]
+build-sqlite:
+    cargo build --features sqlite
+
+# Check SQLite compilation
+[group('dev')]
+check-sqlite:
+    cargo check --features sqlite
+
+# Start the Mapbox proxy server
+[group('dev')]
+proxy: _ensure-env
+    cargo run --bin proxy
+
+# Run the on-device server (SQLite + web UI)
+[group('dev')]
+ondevice REGION='regions/ile-de-france.db' *ARGS='':
+    cargo run --features sqlite --bin ondevice -- --region={{REGION}} {{ARGS}}
+
+# Build the on-device binary (release)
+[group('dev')]
+build-ondevice:
+    cargo build --features sqlite --bin ondevice --release
+
 # Open the route visualizer in the browser
 [group('dev')]
 open:
@@ -100,6 +125,16 @@ test:
 [group('test')]
 test-fast:
     SKIP_REAL_API_TESTS=true cargo test
+
+# Run SQLite tests only (no external DB needed)
+[group('test')]
+test-sqlite:
+    cargo test --features sqlite --lib db::sqlite_repo
+
+# Run all tests with SQLite feature enabled
+[group('test')]
+test-all-features:
+    SKIP_REAL_API_TESTS=true cargo test --features sqlite
 
 # Run tests with RUST_LOG=debug output
 [group('test')]
@@ -137,6 +172,11 @@ fmt:
 [group('quality')]
 lint:
     cargo clippy -- -D warnings
+
+# Run clippy with all features (including sqlite)
+[group('quality')]
+lint-all:
+    cargo clippy --all-features -- -D warnings
 
 # Run full check: fmt, lint, test, build
 [group('quality')]
@@ -179,6 +219,22 @@ reset-db:
     sqlx migrate run
     @echo "Database reset complete."
 
+# ─── SQLite Region Build ─────────────────────────────────
+
+# Build a SQLite region DB from an OSM PBF file
+[group('database')]
+build-region INPUT OUTPUT:
+    cargo run --features sqlite --bin build_region -- --input={{INPUT}} --output={{OUTPUT}}
+
+# Download OSM data and build a SQLite region DB (e.g. just add-region monaco)
+[group('database')]
+add-region REGION:
+    ./osm/download_osm.sh {{REGION}}
+    @BASENAME=$(basename "{{REGION}}"); \
+    cargo run --features sqlite --bin build_region -- \
+        --input=osm/data/${BASENAME}-latest.osm.pbf \
+        --output=regions/${BASENAME}.db
+
 # ─── OSM Data ─────────────────────────────────────────────
 
 # Download and import OSM POIs for a region (e.g. just import monaco)
@@ -193,6 +249,11 @@ import REGION:
 [group('api')]
 health:
     @curl -s http://localhost:3000/api/v1/debug/health | python3 -m json.tool
+
+# Check proxy health
+[group('api')]
+proxy-health:
+    @curl -s http://localhost:4000/health | python3 -m json.tool
 
 # Send the example loop request to the API
 [group('api')]

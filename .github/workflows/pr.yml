@@ -42,6 +42,28 @@ jobs:
       - name: Build check
         run: cargo check --all-targets --all-features
 
+  test-sqlite:
+    name: SQLite Tests
+    runs-on: ubuntu-latest
+    needs: quick-check
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ci-test"
+          save-if: false
+          cache-on-failure: true
+
+      - name: Run SQLite tests
+        run: cargo test --features sqlite --lib db::sqlite_repo --verbose
+
   test:
     name: Test
     runs-on: ubuntu-latest
