@@ -3,8 +3,8 @@ use std::env;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum ScoringStrategy {
+    Simple, // Distance-only scoring (original)
     #[default]
-    Simple, // Distance-only scoring (original), default until Advanced waypoint scaling fixed
     Advanced, // Context-aware with quality, clustering, angular diversity
 }
 
@@ -129,23 +129,23 @@ impl Default for RouteGeneratorConfig {
             tolerance_level_relaxed: 0.3,
             tolerance_level_very_relaxed: 0.5,
             default_distance_tolerance_pct: 0.2,
-            max_route_generation_retries: 5,
+            max_route_generation_retries: 3,
             waypoints_count_short: 2,
             waypoints_count_medium: 3,
             waypoints_count_long: 4,
             long_route_threshold_km: 8.0,
             poi_count_threshold_long: 3,
-            waypoint_distance_multiplier_2wp: 0.40,
-            waypoint_distance_multiplier_3wp: 0.25,
+            waypoint_distance_multiplier_2wp: 0.50,
+            waypoint_distance_multiplier_3wp: 0.35,
             waypoint_distance_multiplier_4wp: 0.28,
-            // POI Scoring defaults - Distance is most important for route length accuracy
+            // POI Scoring defaults - balanced for Advanced strategy
             poi_scoring_strategy: ScoringStrategy::default(),
             poi_min_separation_km: 0.3,
-            poi_score_weight_distance: 0.6, // Increased from 0.4 - distance is critical
-            poi_score_weight_quality: 0.2,  // Decreased from 0.3
-            poi_score_weight_angular: 0.2, // Increased for loop quality (split: angular diversity + loop shape)
-            poi_score_weight_clustering: 0.05, // Decreased from 0.1
-            poi_score_weight_variation: 0.05, // Same
+            poi_score_weight_distance: 0.45, // Still dominant, but leaves room for spatial signals
+            poi_score_weight_quality: 0.15,
+            poi_score_weight_angular: 0.35, // Key factor for avoiding clustered waypoints
+            poi_score_weight_clustering: 0.05,
+            poi_score_weight_variation: 0.05,
             metrics_overlap_threshold_m: 25.0,
             scoring_version: 1,
         }
@@ -239,7 +239,7 @@ impl RouteGeneratorConfig {
 
             // POI Scoring configuration
             poi_scoring_strategy: env::var("ROUTE_POI_SCORING_STRATEGY")
-                .unwrap_or_else(|_| "simple".to_string())
+                .unwrap_or_else(|_| "advanced".to_string())
                 .parse()?,
 
             poi_min_separation_km: env::var("ROUTE_POI_MIN_SEPARATION_KM")

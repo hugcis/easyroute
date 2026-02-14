@@ -29,11 +29,21 @@ impl SimpleStrategy {
         Self { config }
     }
 
-    /// Calculate score based on distance from ideal waypoint distance
-    fn calculate_distance_score(&self, actual_dist: f64, target_dist: f64) -> f32 {
+    /// Calculate score based on distance from ideal waypoint distance.
+    /// Blends between lenient (short routes ≤5km) and strict quadratic (long routes ≥12km).
+    fn calculate_distance_score(
+        &self,
+        actual_dist: f64,
+        target_dist: f64,
+        target_distance_km: f64,
+    ) -> f32 {
         if actual_dist < target_dist {
-            // POIs closer than ideal still get good scores
-            (actual_dist / target_dist) as f32 * 0.8 + 0.2
+            let ratio = (actual_dist / target_dist) as f32;
+            // Blend factor: 0.0 for ≤12km, 1.0 for ≥15km
+            let blend = ((target_distance_km - 12.0) / 3.0).clamp(0.0, 1.0) as f32;
+            let lenient = ratio * 0.8 + 0.2; // original formula
+            let strict = ratio * ratio; // quadratic penalty
+            lenient * (1.0 - blend) + strict * blend
         } else {
             // POIs farther than ideal are penalized more gradually
             let excess_ratio = (actual_dist - target_dist) / target_dist;
@@ -68,8 +78,11 @@ impl PoiScoringStrategy for SimpleStrategy {
                     return None;
                 }
 
-                let distance_score =
-                    self.calculate_distance_score(dist, context.target_waypoint_distance);
+                let distance_score = self.calculate_distance_score(
+                    dist,
+                    context.target_waypoint_distance,
+                    context.target_distance_km,
+                );
                 let variation_offset = Self::calculate_variation_offset(idx, context.attempt_seed);
 
                 Some((distance_score + variation_offset, poi))
@@ -88,10 +101,20 @@ impl AdvancedStrategy {
         Self { config }
     }
 
-    /// Calculate score based on distance from ideal waypoint distance
-    fn calculate_distance_score(&self, actual_dist: f64, target_dist: f64) -> f32 {
+    /// Calculate score based on distance from ideal waypoint distance.
+    /// Blends between lenient (short routes ≤5km) and strict quadratic (long routes ≥12km).
+    fn calculate_distance_score(
+        &self,
+        actual_dist: f64,
+        target_dist: f64,
+        target_distance_km: f64,
+    ) -> f32 {
         if actual_dist < target_dist {
-            (actual_dist / target_dist) as f32 * 0.8 + 0.2
+            let ratio = (actual_dist / target_dist) as f32;
+            let blend = ((target_distance_km - 5.0) / 7.0).clamp(0.0, 1.0) as f32;
+            let lenient = ratio * 0.8 + 0.2;
+            let strict = ratio * ratio;
+            lenient * (1.0 - blend) + strict * blend
         } else {
             let excess_ratio = (actual_dist - target_dist) / target_dist;
             (1.0 - (excess_ratio * 0.5).min(0.8)) as f32
@@ -279,8 +302,11 @@ impl PoiScoringStrategy for AdvancedStrategy {
                 let mut score = 0.0;
 
                 // 1. Distance score (weighted by config)
-                let distance_score =
-                    self.calculate_distance_score(dist, context.target_waypoint_distance);
+                let distance_score = self.calculate_distance_score(
+                    dist,
+                    context.target_waypoint_distance,
+                    context.target_distance_km,
+                );
                 score += distance_score * self.config.poi_score_weight_distance;
 
                 // 2. POI quality score (weighted by config)
@@ -322,24 +348,69 @@ mod tests {
     use crate::models::PoiCategory;
 
     #[test]
-    fn test_simple_strategy_distance_scoring() {
+    fn test_simple_strategy_distance_scoring_short_route() {
         let config = RouteGeneratorConfig::default();
         let strategy = SimpleStrategy::new(config.clone());
 
-        // Test distance score calculation
-        let target_dist = 2.0;
+        // Short route (3km): blend=0, uses original lenient formula
+        let target_dist = 1.0;
+        let route_km = 3.0;
 
-        // POI at ideal distance should score high
-        let score_ideal = strategy.calculate_distance_score(2.0, target_dist);
+        // POI at ideal distance should score ~1.0
+        let score_ideal = strategy.calculate_distance_score(1.0, target_dist, route_km);
         assert!(score_ideal > 0.9);
 
-        // POI closer than ideal still gets good score
-        let score_close = strategy.calculate_distance_score(1.5, target_dist);
-        assert!(score_close > 0.7);
+        // POI at 75% distance: lenient = 0.75*0.8+0.2 = 0.8
+        let score_close = strategy.calculate_distance_score(0.75, target_dist, route_km);
+        assert!((score_close - 0.8).abs() < 0.01);
 
-        // POI far from ideal gets penalized (4.0 is 2x target, so excess_ratio=1.0, score ~0.5)
-        let score_far = strategy.calculate_distance_score(4.0, target_dist);
-        assert!(score_far < 0.6); // Adjusted: formula gives 1.0 - (1.0 * 0.5) = 0.5
+        // POI at 50% distance: lenient = 0.5*0.8+0.2 = 0.6
+        let score_half = strategy.calculate_distance_score(0.5, target_dist, route_km);
+        assert!((score_half - 0.6).abs() < 0.01);
+
+        // POI far from ideal (unchanged branch)
+        let score_far = strategy.calculate_distance_score(4.0, 2.0, route_km);
+        assert!(score_far < 0.6);
+    }
+
+    #[test]
+    fn test_simple_strategy_distance_scoring_long_route() {
+        let config = RouteGeneratorConfig::default();
+        let strategy = SimpleStrategy::new(config.clone());
+
+        // Long route (15km): blend=1.0, fully quadratic
+        let target_dist = 3.75;
+        let route_km = 15.0;
+
+        // POI at ideal distance should score ~1.0
+        let score_ideal = strategy.calculate_distance_score(3.75, target_dist, route_km);
+        assert!(score_ideal > 0.9);
+
+        // POI at 75% distance: quadratic = (0.75)^2 = 0.5625
+        let score_close = strategy.calculate_distance_score(2.8125, target_dist, route_km);
+        assert!((score_close - 0.5625).abs() < 0.01);
+
+        // POI at ~27% distance (1km/3.75km): quadratic ≈ 0.071
+        let score_far_below = strategy.calculate_distance_score(1.0, target_dist, route_km);
+        assert!(score_far_below < 0.1);
+    }
+
+    #[test]
+    fn test_simple_strategy_distance_scoring_blend_midpoint() {
+        let config = RouteGeneratorConfig::default();
+        let strategy = SimpleStrategy::new(config.clone());
+
+        // 14.5km route: blend = (14.5-12)/3 ≈ 0.833, mostly strict
+        let target_dist = 3.6;
+        let route_km = 14.5;
+
+        // POI at 50% distance: lenient=0.6, strict=0.25, blended ≈ 0.31
+        let score = strategy.calculate_distance_score(1.8, target_dist, route_km);
+        assert!(score > 0.27 && score < 0.35, "score was {score}");
+
+        // Still higher than fully quadratic (0.25)
+        let score_full_strict = strategy.calculate_distance_score(1.8, target_dist, 15.0);
+        assert!(score > score_full_strict);
     }
 
     #[test]
