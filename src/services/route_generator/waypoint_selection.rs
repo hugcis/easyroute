@@ -230,8 +230,15 @@ impl WaypointSelector {
             )
         };
 
-        // Alternate: even seeds use min, odd seeds use max
-        if attempt_seed % 2 == 0 {
+        // Short routes: prefer max (3wp), fall back to min (2wp) every 3rd attempt
+        // Long routes: alternate evenly between min (3wp) and max (4wp)
+        if target_distance_km <= self.config.long_route_threshold_km {
+            if attempt_seed % 3 == 2 {
+                min_wp
+            } else {
+                max_wp
+            }
+        } else if attempt_seed % 2 == 0 {
             min_wp
         } else {
             max_wp
@@ -394,11 +401,11 @@ mod tests {
         let config = RouteGeneratorConfig::default();
         let selector = WaypointSelector::new(config);
 
-        // Short routes (5km): even seeds=2wp, odd seeds=3wp
+        // Short routes (5km): prefer 3wp, fall back to 2wp every 3rd attempt (seed%3==2)
         assert_eq!(
             selector.calculate_waypoint_count(5.0, 10, 0),
-            2,
-            "Attempt 0 should use 2 waypoints for short route"
+            3,
+            "Attempt 0 should use 3 waypoints for short route"
         );
         assert_eq!(
             selector.calculate_waypoint_count(5.0, 10, 1),
@@ -417,8 +424,8 @@ mod tests {
         );
         assert_eq!(
             selector.calculate_waypoint_count(5.0, 10, 4),
-            2,
-            "Attempt 4 should use 2 waypoints for short route"
+            3,
+            "Attempt 4 should use 3 waypoints for short route"
         );
 
         // Long routes (10km): even seeds=3wp, odd seeds=4wp
@@ -481,13 +488,13 @@ mod tests {
 
         assert_eq!(
             selector.get_waypoint_distance_multiplier(2),
-            0.40,
-            "2 waypoints should use 0.40 multiplier"
+            0.50,
+            "2 waypoints should use 0.50 multiplier"
         );
         assert_eq!(
             selector.get_waypoint_distance_multiplier(3),
-            0.25,
-            "3 waypoints should use 0.25 multiplier"
+            0.35,
+            "3 waypoints should use 0.35 multiplier"
         );
         assert_eq!(
             selector.get_waypoint_distance_multiplier(4),
@@ -498,12 +505,12 @@ mod tests {
         // Unknown count should fall back to 3-waypoint multiplier
         assert_eq!(
             selector.get_waypoint_distance_multiplier(5),
-            0.25,
+            0.35,
             "Unknown waypoint count should fallback to 3-waypoint multiplier"
         );
         assert_eq!(
             selector.get_waypoint_distance_multiplier(1),
-            0.25,
+            0.35,
             "Invalid waypoint count should fallback to 3-waypoint multiplier"
         );
     }
@@ -513,11 +520,11 @@ mod tests {
         let config = RouteGeneratorConfig::default();
         let selector = WaypointSelector::new(config);
 
-        // At exactly 8km threshold
+        // At exactly 8km threshold (short route: prefer 3wp)
         assert_eq!(
             selector.calculate_waypoint_count(8.0, 10, 0),
-            2,
-            "At threshold, should still use short route settings"
+            3,
+            "At threshold, should use short route settings (3wp preferred)"
         );
 
         // Just above threshold
