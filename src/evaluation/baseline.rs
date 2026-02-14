@@ -131,9 +131,6 @@ pub fn compare(
         .map(|s| (s.name.as_str(), s))
         .collect();
 
-    let current_names: std::collections::HashSet<&str> =
-        results.iter().map(|r| r.scenario.name.as_str()).collect();
-
     let mut scenario_comparisons = Vec::new();
     let mut total_regressions = 0;
     let mut new_scenarios = Vec::new();
@@ -214,14 +211,6 @@ pub fn compare(
             regressions,
         });
     }
-
-    // Note baseline scenarios not present in current run (not counted as regressions)
-    let _missing: Vec<&str> = baseline
-        .scenarios
-        .iter()
-        .map(|s| s.name.as_str())
-        .filter(|n| !current_names.contains(n))
-        .collect();
 
     ComparisonReport {
         baseline_timestamp: baseline.timestamp.clone(),

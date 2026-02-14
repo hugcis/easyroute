@@ -11,14 +11,8 @@ pub enum AppError {
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
 
-    #[error("External API error: {0}")]
-    ExternalApi(String),
-
     #[error("Mapbox API error: {0}")]
     MapboxApi(String),
-
-    #[error("Overpass API error: {0}")]
-    OverpassApi(String),
 
     #[error("Cache error: {0}")]
     Cache(String),
@@ -47,17 +41,9 @@ impl IntoResponse for AppError {
                 tracing::error!("Database error: {}", e);
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal database error")
             }
-            AppError::ExternalApi(ref e) => {
-                tracing::error!("External API error: {}", e);
-                (StatusCode::BAD_GATEWAY, "External service error")
-            }
             AppError::MapboxApi(ref e) => {
                 tracing::error!("Mapbox API error: {}", e);
                 (StatusCode::BAD_GATEWAY, "Routing service error")
-            }
-            AppError::OverpassApi(ref e) => {
-                tracing::error!("Overpass API error: {}", e);
-                (StatusCode::BAD_GATEWAY, "POI service error")
             }
             AppError::Cache(ref e) => {
                 tracing::warn!("Cache error: {}", e);

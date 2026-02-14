@@ -15,7 +15,6 @@ pub const MIN_ALTERNATIVES_FOR_SUCCESS: u32 = 3; // Generate at least 3 alternat
 pub const MAX_ALTERNATIVES_CLAMP: u32 = 5;
 
 // Waypoint selection thresholds (for medium/long route classification)
-pub const WAYPOINTS_MEDIUM_ROUTE_DISTANCE_KM: f64 = 5.0;
 pub const WAYPOINTS_LONG_ROUTE_MIN_POIS: usize = 6;
 pub const WAYPOINTS_MEDIUM_ROUTE_MIN_POIS: usize = 4;
 
@@ -28,13 +27,6 @@ pub const VARIATION_MULTIPLIER: usize = 3;
 pub const VARIATION_OFFSET_BASE: usize = 11;
 pub const VARIATION_MOD: usize = 100;
 pub const VARIATION_SCORE_FACTOR: f32 = 0.05;
-
-// Overpass API configuration
-pub const OVERPASS_QUERY_TIMEOUT_SECONDS: u64 = 30; // Reduced from 60s to fail faster and use batching
-pub const OVERPASS_RETRY_MAX_ATTEMPTS: usize = 2; // Total of 3 attempts (0, 1, 2)
-pub const OVERPASS_RETRY_EXTENDED_MAX_ATTEMPTS: usize = 2; // For single queries
-pub const OVERPASS_HTTP_TOO_MANY_REQUESTS: u16 = 429;
-pub const OVERPASS_HTTP_GATEWAY_TIMEOUT: u16 = 504;
 
 // Distance correction feedback loop
 pub const DISTANCE_CORRECTION_DAMPING: f64 = 0.7;

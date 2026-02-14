@@ -183,15 +183,6 @@ impl LoopRouteRequest {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub struct PointToPointRouteRequest {
-    pub start_point: Coordinates,
-    pub end_point: Coordinates,
-    pub mode: TransportMode,
-    #[serde(default)]
-    pub preferences: RoutePreferences,
-}
-
 #[derive(Debug, Serialize)]
 pub struct RouteResponse {
     pub routes: Vec<Route>,
