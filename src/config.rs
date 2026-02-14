@@ -301,3 +301,122 @@ impl Config {
         format!("{}:{}", self.host, self.port)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+
+    // --- ScoringStrategy::from_str (no env vars needed) ---
+
+    #[test]
+    fn scoring_strategy_simple() {
+        assert_eq!(
+            "simple".parse::<ScoringStrategy>().unwrap(),
+            ScoringStrategy::Simple
+        );
+    }
+
+    #[test]
+    fn scoring_strategy_advanced() {
+        assert_eq!(
+            "advanced".parse::<ScoringStrategy>().unwrap(),
+            ScoringStrategy::Advanced
+        );
+    }
+
+    #[test]
+    fn scoring_strategy_case_insensitive() {
+        assert_eq!(
+            "SIMPLE".parse::<ScoringStrategy>().unwrap(),
+            ScoringStrategy::Simple
+        );
+        assert_eq!(
+            "Advanced".parse::<ScoringStrategy>().unwrap(),
+            ScoringStrategy::Advanced
+        );
+    }
+
+    #[test]
+    fn scoring_strategy_invalid() {
+        assert!("invalid".parse::<ScoringStrategy>().is_err());
+    }
+
+    // --- RouteGeneratorConfig defaults ---
+
+    #[test]
+    fn route_generator_config_defaults() {
+        let d = RouteGeneratorConfig::default();
+        assert_eq!(d.poi_search_radius_multiplier, 1.0);
+        assert_eq!(d.waypoint_distance_multiplier, 0.35);
+        assert_eq!(d.default_distance_tolerance_pct, 0.2);
+        assert_eq!(d.max_route_generation_retries, 3);
+        assert_eq!(d.waypoints_count_short, 2);
+        assert_eq!(d.waypoints_count_medium, 3);
+        assert_eq!(d.waypoints_count_long, 4);
+        assert_eq!(d.long_route_threshold_km, 8.0);
+        assert_eq!(d.scoring_version, 1);
+        assert_eq!(d.poi_scoring_strategy, ScoringStrategy::Advanced);
+    }
+
+    // --- RouteGeneratorConfig::from_env ---
+
+    #[test]
+    #[serial]
+    fn route_generator_config_from_env_defaults() {
+        // Clear all ROUTE_ env vars to ensure defaults
+        let route_keys: Vec<String> = env::vars()
+            .filter(|(k, _)| k.starts_with("ROUTE_"))
+            .map(|(k, _)| k)
+            .collect();
+        for key in &route_keys {
+            unsafe { env::remove_var(key) };
+        }
+        let config = RouteGeneratorConfig::from_env().unwrap();
+        let d = RouteGeneratorConfig::default();
+        assert_eq!(
+            config.poi_search_radius_multiplier,
+            d.poi_search_radius_multiplier
+        );
+        assert_eq!(config.scoring_version, d.scoring_version);
+    }
+
+    #[test]
+    #[serial]
+    fn route_generator_config_custom_override() {
+        unsafe {
+            env::set_var("ROUTE_SCORING_VERSION", "2");
+            env::remove_var("ROUTE_POI_SCORING_STRATEGY");
+        }
+        let config = RouteGeneratorConfig::from_env().unwrap();
+        assert_eq!(config.scoring_version, 2);
+        unsafe { env::remove_var("ROUTE_SCORING_VERSION") };
+    }
+
+    #[test]
+    #[serial]
+    fn route_generator_config_invalid_value() {
+        unsafe { env::set_var("ROUTE_SCORING_VERSION", "not_a_number") };
+        let result = RouteGeneratorConfig::from_env();
+        assert!(result.is_err());
+        unsafe { env::remove_var("ROUTE_SCORING_VERSION") };
+    }
+
+    // --- Config::server_address ---
+
+    #[test]
+    fn server_address_format() {
+        let config = Config {
+            host: "127.0.0.1".to_string(),
+            port: 8080,
+            database_url: String::new(),
+            redis_url: None,
+            mapbox_api_key: String::new(),
+            route_cache_ttl: 0,
+            poi_region_cache_ttl: 0,
+            snap_radius_m: 100.0,
+            route_generator: RouteGeneratorConfig::default(),
+        };
+        assert_eq!(config.server_address(), "127.0.0.1:8080");
+    }
+}
