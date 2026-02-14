@@ -152,135 +152,111 @@ impl Default for RouteGeneratorConfig {
     }
 }
 
+/// Parse an environment variable with a default value, returning a descriptive error on failure.
+macro_rules! parse_env {
+    ($env:literal, $default:expr) => {
+        env::var($env)
+            .unwrap_or_else(|_| $default.to_string())
+            .parse()
+            .map_err(|_| concat!("Invalid ", $env))?
+    };
+}
+
 impl RouteGeneratorConfig {
     pub fn from_env() -> Result<Self, String> {
-        let defaults = Self::default();
+        let d = Self::default();
 
         Ok(Self {
-            poi_search_radius_multiplier: env::var("ROUTE_POI_SEARCH_RADIUS_MULTIPLIER")
-                .unwrap_or_else(|_| defaults.poi_search_radius_multiplier.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_POI_SEARCH_RADIUS_MULTIPLIER")?,
-
-            waypoint_distance_multiplier: env::var("ROUTE_WAYPOINT_DISTANCE_MULTIPLIER")
-                .unwrap_or_else(|_| defaults.waypoint_distance_multiplier.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_WAYPOINT_DISTANCE_MULTIPLIER")?,
-
-            max_poi_distance_multiplier: env::var("ROUTE_MAX_POI_DISTANCE_MULTIPLIER")
-                .unwrap_or_else(|_| defaults.max_poi_distance_multiplier.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_MAX_POI_DISTANCE_MULTIPLIER")?,
-
-            min_poi_distance_km: env::var("ROUTE_MIN_POI_DISTANCE_KM")
-                .unwrap_or_else(|_| defaults.min_poi_distance_km.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_MIN_POI_DISTANCE_KM")?,
-
-            tolerance_level_relaxed: env::var("ROUTE_TOLERANCE_LEVEL_RELAXED")
-                .unwrap_or_else(|_| defaults.tolerance_level_relaxed.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_TOLERANCE_LEVEL_RELAXED")?,
-
-            tolerance_level_very_relaxed: env::var("ROUTE_TOLERANCE_LEVEL_VERY_RELAXED")
-                .unwrap_or_else(|_| defaults.tolerance_level_very_relaxed.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_TOLERANCE_LEVEL_VERY_RELAXED")?,
-
-            default_distance_tolerance_pct: env::var("ROUTE_DEFAULT_DISTANCE_TOLERANCE_PCT")
-                .unwrap_or_else(|_| defaults.default_distance_tolerance_pct.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_DEFAULT_DISTANCE_TOLERANCE_PCT")?,
-
-            max_route_generation_retries: env::var("ROUTE_MAX_GENERATION_RETRIES")
-                .unwrap_or_else(|_| defaults.max_route_generation_retries.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_MAX_GENERATION_RETRIES")?,
-
-            waypoints_count_short: env::var("ROUTE_WAYPOINTS_COUNT_SHORT")
-                .unwrap_or_else(|_| defaults.waypoints_count_short.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_WAYPOINTS_COUNT_SHORT")?,
-
-            waypoints_count_medium: env::var("ROUTE_WAYPOINTS_COUNT_MEDIUM")
-                .unwrap_or_else(|_| defaults.waypoints_count_medium.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_WAYPOINTS_COUNT_MEDIUM")?,
-
-            waypoints_count_long: env::var("ROUTE_WAYPOINTS_COUNT_LONG")
-                .unwrap_or_else(|_| defaults.waypoints_count_long.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_WAYPOINTS_COUNT_LONG")?,
-
-            long_route_threshold_km: env::var("ROUTE_LONG_ROUTE_THRESHOLD_KM")
-                .unwrap_or_else(|_| defaults.long_route_threshold_km.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_LONG_ROUTE_THRESHOLD_KM")?,
-
-            poi_count_threshold_long: env::var("ROUTE_POI_COUNT_THRESHOLD_LONG")
-                .unwrap_or_else(|_| defaults.poi_count_threshold_long.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_POI_COUNT_THRESHOLD_LONG")?,
-
-            waypoint_distance_multiplier_2wp: env::var("ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_2WP")
-                .unwrap_or_else(|_| defaults.waypoint_distance_multiplier_2wp.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_2WP")?,
-
-            waypoint_distance_multiplier_3wp: env::var("ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_3WP")
-                .unwrap_or_else(|_| defaults.waypoint_distance_multiplier_3wp.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_3WP")?,
-
-            waypoint_distance_multiplier_4wp: env::var("ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_4WP")
-                .unwrap_or_else(|_| defaults.waypoint_distance_multiplier_4wp.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_4WP")?,
-
-            // POI Scoring configuration
+            poi_search_radius_multiplier: parse_env!(
+                "ROUTE_POI_SEARCH_RADIUS_MULTIPLIER",
+                d.poi_search_radius_multiplier
+            ),
+            waypoint_distance_multiplier: parse_env!(
+                "ROUTE_WAYPOINT_DISTANCE_MULTIPLIER",
+                d.waypoint_distance_multiplier
+            ),
+            max_poi_distance_multiplier: parse_env!(
+                "ROUTE_MAX_POI_DISTANCE_MULTIPLIER",
+                d.max_poi_distance_multiplier
+            ),
+            min_poi_distance_km: parse_env!("ROUTE_MIN_POI_DISTANCE_KM", d.min_poi_distance_km),
+            tolerance_level_relaxed: parse_env!(
+                "ROUTE_TOLERANCE_LEVEL_RELAXED",
+                d.tolerance_level_relaxed
+            ),
+            tolerance_level_very_relaxed: parse_env!(
+                "ROUTE_TOLERANCE_LEVEL_VERY_RELAXED",
+                d.tolerance_level_very_relaxed
+            ),
+            default_distance_tolerance_pct: parse_env!(
+                "ROUTE_DEFAULT_DISTANCE_TOLERANCE_PCT",
+                d.default_distance_tolerance_pct
+            ),
+            max_route_generation_retries: parse_env!(
+                "ROUTE_MAX_GENERATION_RETRIES",
+                d.max_route_generation_retries
+            ),
+            waypoints_count_short: parse_env!(
+                "ROUTE_WAYPOINTS_COUNT_SHORT",
+                d.waypoints_count_short
+            ),
+            waypoints_count_medium: parse_env!(
+                "ROUTE_WAYPOINTS_COUNT_MEDIUM",
+                d.waypoints_count_medium
+            ),
+            waypoints_count_long: parse_env!("ROUTE_WAYPOINTS_COUNT_LONG", d.waypoints_count_long),
+            long_route_threshold_km: parse_env!(
+                "ROUTE_LONG_ROUTE_THRESHOLD_KM",
+                d.long_route_threshold_km
+            ),
+            poi_count_threshold_long: parse_env!(
+                "ROUTE_POI_COUNT_THRESHOLD_LONG",
+                d.poi_count_threshold_long
+            ),
+            waypoint_distance_multiplier_2wp: parse_env!(
+                "ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_2WP",
+                d.waypoint_distance_multiplier_2wp
+            ),
+            waypoint_distance_multiplier_3wp: parse_env!(
+                "ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_3WP",
+                d.waypoint_distance_multiplier_3wp
+            ),
+            waypoint_distance_multiplier_4wp: parse_env!(
+                "ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_4WP",
+                d.waypoint_distance_multiplier_4wp
+            ),
             poi_scoring_strategy: env::var("ROUTE_POI_SCORING_STRATEGY")
                 .unwrap_or_else(|_| "advanced".to_string())
                 .parse()?,
-
-            poi_min_separation_km: env::var("ROUTE_POI_MIN_SEPARATION_KM")
-                .unwrap_or_else(|_| defaults.poi_min_separation_km.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_POI_MIN_SEPARATION_KM")?,
-
-            poi_score_weight_distance: env::var("ROUTE_POI_SCORE_WEIGHT_DISTANCE")
-                .unwrap_or_else(|_| defaults.poi_score_weight_distance.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_POI_SCORE_WEIGHT_DISTANCE")?,
-
-            poi_score_weight_quality: env::var("ROUTE_POI_SCORE_WEIGHT_QUALITY")
-                .unwrap_or_else(|_| defaults.poi_score_weight_quality.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_POI_SCORE_WEIGHT_QUALITY")?,
-
-            poi_score_weight_angular: env::var("ROUTE_POI_SCORE_WEIGHT_ANGULAR")
-                .unwrap_or_else(|_| defaults.poi_score_weight_angular.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_POI_SCORE_WEIGHT_ANGULAR")?,
-
-            poi_score_weight_clustering: env::var("ROUTE_POI_SCORE_WEIGHT_CLUSTERING")
-                .unwrap_or_else(|_| defaults.poi_score_weight_clustering.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_POI_SCORE_WEIGHT_CLUSTERING")?,
-
-            poi_score_weight_variation: env::var("ROUTE_POI_SCORE_WEIGHT_VARIATION")
-                .unwrap_or_else(|_| defaults.poi_score_weight_variation.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_POI_SCORE_WEIGHT_VARIATION")?,
-
-            metrics_overlap_threshold_m: env::var("ROUTE_METRICS_OVERLAP_THRESHOLD_M")
-                .unwrap_or_else(|_| defaults.metrics_overlap_threshold_m.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_METRICS_OVERLAP_THRESHOLD_M")?,
-
-            scoring_version: env::var("ROUTE_SCORING_VERSION")
-                .unwrap_or_else(|_| defaults.scoring_version.to_string())
-                .parse()
-                .map_err(|_| "Invalid ROUTE_SCORING_VERSION")?,
+            poi_min_separation_km: parse_env!(
+                "ROUTE_POI_MIN_SEPARATION_KM",
+                d.poi_min_separation_km
+            ),
+            poi_score_weight_distance: parse_env!(
+                "ROUTE_POI_SCORE_WEIGHT_DISTANCE",
+                d.poi_score_weight_distance
+            ),
+            poi_score_weight_quality: parse_env!(
+                "ROUTE_POI_SCORE_WEIGHT_QUALITY",
+                d.poi_score_weight_quality
+            ),
+            poi_score_weight_angular: parse_env!(
+                "ROUTE_POI_SCORE_WEIGHT_ANGULAR",
+                d.poi_score_weight_angular
+            ),
+            poi_score_weight_clustering: parse_env!(
+                "ROUTE_POI_SCORE_WEIGHT_CLUSTERING",
+                d.poi_score_weight_clustering
+            ),
+            poi_score_weight_variation: parse_env!(
+                "ROUTE_POI_SCORE_WEIGHT_VARIATION",
+                d.poi_score_weight_variation
+            ),
+            metrics_overlap_threshold_m: parse_env!(
+                "ROUTE_METRICS_OVERLAP_THRESHOLD_M",
+                d.metrics_overlap_threshold_m
+            ),
+            scoring_version: parse_env!("ROUTE_SCORING_VERSION", d.scoring_version),
         })
     }
 }

@@ -62,12 +62,7 @@ impl PoiService {
     }
 
     /// Score and filter POIs based on preferences
-    pub fn score_and_filter_pois(
-        &self,
-        pois: Vec<Poi>,
-        hidden_gems: bool,
-        max_count: usize,
-    ) -> Vec<Poi> {
+    pub fn select_top_pois(&self, pois: Vec<Poi>, hidden_gems: bool, max_count: usize) -> Vec<Poi> {
         let mut scored_pois: Vec<(f32, Poi)> = pois
             .into_iter()
             .map(|poi| {
@@ -97,7 +92,7 @@ mod unit_tests {
     use super::*;
 
     #[test]
-    fn test_score_and_filter_basic() {
+    fn test_select_top_pois_basic() {
         // Test the scoring logic without database
         let poi1 = Poi::new(
             "Popular".to_string(),
