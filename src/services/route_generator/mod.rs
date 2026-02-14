@@ -158,8 +158,13 @@ impl RouteGenerator {
         }
 
         // Step 2: Score and filter POIs
-        // Scale candidate limit with distance: 5km→50, 9km→90, 15km→100
-        let candidate_limit = (target_distance_km * 10.0).clamp(20.0, 100.0) as usize;
+        // Preserve old cap (100) for ≤12km; raise for longer routes so distant POIs survive
+        let max_candidates = if target_distance_km > 12.0 {
+            300.0
+        } else {
+            100.0
+        };
+        let candidate_limit = (target_distance_km * 10.0).clamp(20.0, max_candidates) as usize;
         let raw_count = raw_pois.len();
         let candidate_pois = self.poi_service.score_and_filter_pois(
             raw_pois,
@@ -248,13 +253,46 @@ impl RouteGenerator {
             }
         }
 
-        // Step 4: Final fallback - geometric loop (always attempt, never return 500)
+        // Step 4: Extreme tolerance — accept any route with POI waypoints (0 to 2x target)
+        let extreme_tolerance = target_distance_km; // ±100%
+        tracing::warn!(
+            tolerance_km = %format!("{:.2}", extreme_tolerance),
+            target_km = %format!("{:.1}", target_distance_km),
+            candidates = candidate_pois.len(),
+            "All tolerance levels exhausted, trying extreme tolerance (±100%): {:.1}km ± {:.2}km",
+            target_distance_km, extreme_tolerance
+        );
+
+        let seed_offset = tolerance_levels.len() * max_alternatives;
+        let extreme_routes = self
+            .tolerance_strategy
+            .try_generate_routes_with_tolerance(
+                &start,
+                target_distance_km,
+                extreme_tolerance,
+                mode,
+                &candidate_pois,
+                preferences,
+                seed_offset,
+            )
+            .await;
+
+        if !extreme_routes.is_empty() {
+            tracing::info!(
+                count = extreme_routes.len(),
+                "Generated {} routes with extreme tolerance (±100%)",
+                extreme_routes.len()
+            );
+            return Ok(extreme_routes);
+        }
+
+        // Step 5: Final fallback - geometric loop (always attempt, never return 500)
         tracing::warn!(
             candidates = candidate_pois.len(),
-            tolerance_levels_tried = tolerance_levels_tried,
+            tolerance_levels_tried = tolerance_levels_tried + 1,
             target_km = %format!("{:.1}", target_distance_km),
-            "All {} tolerance levels exhausted with {} candidates for {:.1}km target, falling back to geometric loop",
-            tolerance_levels_tried, candidate_pois.len(), target_distance_km
+            "All {} tolerance levels + extreme exhausted with {} candidates for {:.1}km target, falling back to geometric loop",
+            tolerance_levels_tried + 1, candidate_pois.len(), target_distance_km
         );
         let route = self
             .geometric_loop_generator
