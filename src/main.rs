@@ -1,13 +1,14 @@
 use axum::Router;
-use easyroute::cache::CacheService;
+use easyroute::cache::{MemoryCacheService, RedisCacheService, RouteCache};
 use easyroute::config::Config;
-use easyroute::services::mapbox::MapboxClient;
+use easyroute::constants::DEFAULT_MEMORY_CACHE_MAX_ENTRIES;
+use easyroute::db::PgPoiRepository;
+use easyroute::services::mapbox::{AuthMode, MapboxClient};
 use easyroute::services::poi_service::PoiService;
 use easyroute::services::route_generator::RouteGenerator;
 use easyroute::services::snapping_service::SnappingService;
 use easyroute::AppState;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -39,37 +40,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sqlx::migrate!("./migrations").run(&db_pool).await?;
     tracing::info!("Database migrations completed");
 
-    // Initialize Redis cache if configured
-    let cache = if let Some(ref redis_url) = config.redis_url {
+    // Initialize cache: try Redis, fall back to in-memory
+    let cache: Arc<dyn RouteCache> = if let Some(ref redis_url) = config.redis_url {
         tracing::info!("Connecting to Redis cache...");
-        match CacheService::new(
-            redis_url,
-            config.route_cache_ttl,
-            config.poi_region_cache_ttl,
-        )
-        .await
-        {
-            Ok(cache_service) => {
+        match RedisCacheService::new(redis_url, config.route_cache_ttl).await {
+            Ok(redis_cache) => {
                 tracing::info!("Redis cache connection established");
-                Some(Arc::new(RwLock::new(cache_service)))
+                Arc::new(redis_cache)
             }
             Err(e) => {
                 tracing::warn!(
-                    "Failed to connect to Redis: {}. Continuing without cache.",
+                    "Failed to connect to Redis: {}. Falling back to in-memory cache.",
                     e
                 );
-                None
+                Arc::new(MemoryCacheService::new(
+                    config.route_cache_ttl,
+                    DEFAULT_MEMORY_CACHE_MAX_ENTRIES,
+                ))
             }
         }
     } else {
-        tracing::info!("Redis URL not configured. Running without cache.");
-        None
+        tracing::info!("Redis URL not configured. Using in-memory cache.");
+        Arc::new(MemoryCacheService::new(
+            config.route_cache_ttl,
+            DEFAULT_MEMORY_CACHE_MAX_ENTRIES,
+        ))
     };
 
     // Initialize services
-    let mapbox_client = MapboxClient::new(config.mapbox_api_key.clone());
-    let poi_service = PoiService::new(db_pool.clone());
-    let snapping_service = SnappingService::new(db_pool.clone());
+    let poi_repo: Arc<dyn easyroute::db::PoiRepository> =
+        Arc::new(PgPoiRepository::new(db_pool.clone()));
+    let mapbox_client = if let Some(ref base_url) = config.mapbox_base_url {
+        MapboxClient::with_config(
+            config.mapbox_api_key.clone(),
+            base_url.clone(),
+            AuthMode::BearerHeader,
+        )
+    } else {
+        MapboxClient::new(config.mapbox_api_key.clone())
+    };
+    let poi_service = PoiService::new(poi_repo.clone());
+    let snapping_service = SnappingService::new(poi_repo.clone());
     let route_generator = RouteGenerator::new(
         mapbox_client,
         poi_service,
@@ -80,14 +91,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create application state
     let state = Arc::new(AppState {
-        db_pool,
+        poi_repo,
         route_generator,
-        cache,
+        cache: Some(cache),
     });
 
     // Build router with CORS and tracing
     let app = Router::new()
-        .nest("/api/v1", easyroute::routes::create_router(state))
+        .nest(
+            "/api/v1",
+            easyroute::routes::create_router(state)
+                .merge(easyroute::routes::create_pg_router(db_pool)),
+        )
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)

@@ -3,13 +3,12 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
-use std::sync::Arc;
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::db::queries;
 use crate::error::AppError;
 use crate::models::evaluation::{EvaluationStats, RatingRequest};
-use crate::AppState;
 
 #[derive(Deserialize)]
 pub struct ListParams {
@@ -25,11 +24,11 @@ fn default_limit() -> i64 {
 
 /// GET /api/v1/evaluations - List evaluated routes
 pub async fn list_evaluations(
-    State(state): State<Arc<AppState>>,
+    State(pool): State<PgPool>,
     Query(params): Query<ListParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let limit = params.limit.clamp(1, 100);
-    let routes = queries::list_evaluated_routes(&state.db_pool, limit, params.offset).await?;
+    let routes = queries::list_evaluated_routes(&pool, limit, params.offset).await?;
 
     Ok(Json(serde_json::json!({
         "routes": routes,
@@ -40,10 +39,10 @@ pub async fn list_evaluations(
 
 /// GET /api/v1/evaluations/:id - Get route detail with metrics and ratings
 pub async fn get_evaluation(
-    State(state): State<Arc<AppState>>,
+    State(pool): State<PgPool>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let route = queries::get_evaluated_route(&state.db_pool, id).await?;
+    let route = queries::get_evaluated_route(&pool, id).await?;
 
     match route {
         Some(r) => Ok(Json(serde_json::json!(r))),
@@ -56,14 +55,14 @@ pub async fn get_evaluation(
 
 /// POST /api/v1/evaluations/:id/ratings - Submit a rating
 pub async fn submit_rating(
-    State(state): State<Arc<AppState>>,
+    State(pool): State<PgPool>,
     Path(route_id): Path<Uuid>,
     Json(req): Json<RatingRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     req.validate().map_err(AppError::InvalidRequest)?;
 
     // Verify route exists
-    let route = queries::get_evaluated_route(&state.db_pool, route_id).await?;
+    let route = queries::get_evaluated_route(&pool, route_id).await?;
     if route.is_none() {
         return Err(AppError::NotFound(format!(
             "Evaluated route {} not found",
@@ -72,7 +71,7 @@ pub async fn submit_rating(
     }
 
     let rating_id = queries::insert_route_rating(
-        &state.db_pool,
+        &pool,
         route_id,
         req.overall_rating,
         req.shape_rating,
@@ -91,10 +90,10 @@ pub async fn submit_rating(
 
 /// GET /api/v1/evaluations/stats - Correlation stats
 pub async fn evaluation_stats(
-    State(state): State<Arc<AppState>>,
+    State(pool): State<PgPool>,
 ) -> Result<Json<EvaluationStats>, AppError> {
-    let (total_routes, total_ratings) = queries::get_evaluation_counts(&state.db_pool).await?;
-    let correlations = queries::get_correlation_data(&state.db_pool).await?;
+    let (total_routes, total_ratings) = queries::get_evaluation_counts(&pool).await?;
+    let correlations = queries::get_correlation_data(&pool).await?;
 
     Ok(Json(EvaluationStats {
         total_routes,

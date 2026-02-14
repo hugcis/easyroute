@@ -1,4 +1,4 @@
-use crate::cache::{CacheService, RoutePreferencesHash};
+use crate::cache::{self, RoutePreferencesHash};
 use crate::error::{AppError, Result};
 use crate::models::route::{LoopRouteRequest, RouteResponse};
 use crate::AppState;
@@ -30,7 +30,7 @@ pub async fn create_loop_route(
         request.preferences.poi_categories.as_deref(),
         request.preferences.hidden_gems,
     );
-    let cache_key = CacheService::loop_route_cache_key(
+    let cache_key = cache::loop_route_cache_key(
         &request.start_point,
         request.distance_km,
         request.mode.mapbox_profile(),
@@ -39,8 +39,7 @@ pub async fn create_loop_route(
 
     // Check cache first
     if let Some(ref cache) = state.cache {
-        let mut cache_guard = cache.write().await;
-        if let Some(cached_routes) = cache_guard.get_cached_routes(&cache_key).await {
+        if let Some(cached_routes) = cache.get_cached_routes(&cache_key).await {
             tracing::info!(
                 "Cache hit for loop route: {} routes returned",
                 cached_routes.len()
@@ -65,8 +64,7 @@ pub async fn create_loop_route(
 
     // Cache the results
     if let Some(ref cache) = state.cache {
-        let mut cache_guard = cache.write().await;
-        cache_guard.cache_routes(&cache_key, &routes).await;
+        cache.cache_routes(&cache_key, &routes).await;
     }
 
     Ok(Json(RouteResponse { routes }))

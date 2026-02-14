@@ -1,4 +1,3 @@
-use crate::db::queries;
 use crate::error::{AppError, Result};
 use crate::models::{Coordinates, Poi, PoiCategory};
 use crate::AppState;
@@ -132,14 +131,15 @@ pub async fn query_pois(
 
     // Query database
     let radius_meters = params.radius_km * 1000.0;
-    let pois = queries::find_pois_within_radius(
-        &state.db_pool,
-        &center,
-        radius_meters,
-        categories.as_deref(),
-        params.limit as i64,
-    )
-    .await?;
+    let pois = state
+        .poi_repo
+        .find_within_radius(
+            &center,
+            radius_meters,
+            categories.as_deref(),
+            params.limit as i64,
+        )
+        .await?;
 
     let count = pois.len();
 

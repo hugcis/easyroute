@@ -1,9 +1,11 @@
+use easyroute::db::PgPoiRepository;
 use easyroute::models::{Coordinates, PoiCategory, RoutePreferences, TransportMode};
 use easyroute::services::mapbox::MapboxClient;
 use easyroute::services::poi_service::PoiService;
 use easyroute::services::route_generator::RouteGenerator;
 use easyroute::services::snapping_service::SnappingService;
 use serial_test::serial;
+use std::sync::Arc;
 
 mod common;
 
@@ -38,8 +40,10 @@ async fn test_route_generation_with_database_pois() {
     // Create services
     let mapbox_key = std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY required");
     let mapbox_client = MapboxClient::new(mapbox_key);
-    let poi_service = PoiService::new(pool.clone());
-    let snapping_service = SnappingService::new(pool.clone());
+    let poi_repo: Arc<dyn easyroute::db::PoiRepository> =
+        Arc::new(PgPoiRepository::new(pool.clone()));
+    let poi_service = PoiService::new(poi_repo.clone());
+    let snapping_service = SnappingService::new(poi_repo.clone());
     let route_generator = RouteGenerator::new(
         mapbox_client,
         poi_service,
@@ -117,8 +121,10 @@ async fn test_route_generation_distance_validation() {
 
     let mapbox_key = std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY required");
     let mapbox_client = MapboxClient::new(mapbox_key);
-    let poi_service = PoiService::new(pool.clone());
-    let snapping_service = SnappingService::new(pool.clone());
+    let poi_repo: Arc<dyn easyroute::db::PoiRepository> =
+        Arc::new(PgPoiRepository::new(pool.clone()));
+    let poi_service = PoiService::new(poi_repo.clone());
+    let snapping_service = SnappingService::new(poi_repo.clone());
     let route_generator = RouteGenerator::new(
         mapbox_client,
         poi_service,
@@ -177,8 +183,10 @@ async fn test_route_poi_ordering() {
 
     let mapbox_key = std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY required");
     let mapbox_client = MapboxClient::new(mapbox_key);
-    let poi_service = PoiService::new(pool.clone());
-    let snapping_service = SnappingService::new(pool.clone());
+    let poi_repo: Arc<dyn easyroute::db::PoiRepository> =
+        Arc::new(PgPoiRepository::new(pool.clone()));
+    let poi_service = PoiService::new(poi_repo.clone());
+    let snapping_service = SnappingService::new(poi_repo.clone());
     let route_generator = RouteGenerator::new(
         mapbox_client,
         poi_service,
@@ -250,8 +258,10 @@ async fn test_route_scoring_different_preferences() {
 
     let mapbox_key = std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY required");
     let mapbox_client = MapboxClient::new(mapbox_key);
-    let poi_service = PoiService::new(pool.clone());
-    let snapping_service = SnappingService::new(pool.clone());
+    let poi_repo: Arc<dyn easyroute::db::PoiRepository> =
+        Arc::new(PgPoiRepository::new(pool.clone()));
+    let poi_service = PoiService::new(poi_repo.clone());
+    let snapping_service = SnappingService::new(poi_repo.clone());
     let route_generator = RouteGenerator::new(
         mapbox_client,
         poi_service,
@@ -317,8 +327,10 @@ async fn test_route_alternatives_use_different_waypoint_counts() {
 
     let mapbox_client =
         MapboxClient::new(std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY must be set"));
-    let poi_service = PoiService::new(pool.clone());
-    let snapping_service = SnappingService::new(pool.clone());
+    let poi_repo: Arc<dyn easyroute::db::PoiRepository> =
+        Arc::new(PgPoiRepository::new(pool.clone()));
+    let poi_service = PoiService::new(poi_repo.clone());
+    let snapping_service = SnappingService::new(poi_repo.clone());
     let route_generator = RouteGenerator::new(
         mapbox_client,
         poi_service,

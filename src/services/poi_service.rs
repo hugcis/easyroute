@@ -1,15 +1,15 @@
-use crate::db::queries;
+use crate::db::PoiRepository;
 use crate::error::{AppError, Result};
 use crate::models::{Coordinates, Poi, PoiCategory};
-use sqlx::PgPool;
+use std::sync::Arc;
 
 pub struct PoiService {
-    db_pool: PgPool,
+    repo: Arc<dyn PoiRepository>,
 }
 
 impl PoiService {
-    pub fn new(db_pool: PgPool) -> Self {
-        PoiService { db_pool }
+    pub fn new(repo: Arc<dyn PoiRepository>) -> Self {
+        PoiService { repo }
     }
 
     /// Find POIs within a radius, with optional category filtering
@@ -24,19 +24,15 @@ impl PoiService {
         let radius_meters = radius_km * 1000.0;
 
         // Query database for POIs
-        let db_pois = queries::find_pois_within_radius(
-            &self.db_pool,
-            center,
-            radius_meters,
-            categories,
-            limit as i64,
-        )
-        .await?;
+        let db_pois = self
+            .repo
+            .find_within_radius(center, radius_meters, categories, limit as i64)
+            .await?;
 
         // Check if we found any POIs
         if !db_pois.is_empty() {
             tracing::info!(
-                "✓ Found {} POIs in database within {:.1}km of ({:.4}, {:.4})",
+                "Found {} POIs in database within {:.1}km of ({:.4}, {:.4})",
                 db_pois.len(),
                 radius_km,
                 center.lat,
@@ -47,7 +43,7 @@ impl PoiService {
 
         // No POIs found - return clear error
         tracing::warn!(
-            "✗ No POIs found in database within {:.1}km of ({:.4}, {:.4})",
+            "No POIs found in database within {:.1}km of ({:.4}, {:.4})",
             radius_km,
             center.lat,
             center.lng

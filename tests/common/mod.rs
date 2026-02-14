@@ -69,6 +69,7 @@ pub fn get_test_config() -> Config {
         route_cache_ttl: 3600,
         poi_region_cache_ttl: 86400,
         snap_radius_m: 100.0,
+        mapbox_base_url: None,
         route_generator: easyroute::config::RouteGeneratorConfig::default(),
     }
 }

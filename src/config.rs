@@ -33,6 +33,7 @@ pub struct Config {
     pub route_cache_ttl: u64,
     pub poi_region_cache_ttl: u64,
     pub snap_radius_m: f64,
+    pub mapbox_base_url: Option<String>,
     pub route_generator: RouteGeneratorConfig,
 }
 
@@ -293,6 +294,7 @@ impl Config {
                 .parse()
                 .map_err(|_| "Invalid POI_REGION_CACHE_TTL")?,
             snap_radius_m,
+            mapbox_base_url: env::var("MAPBOX_BASE_URL").ok(),
             route_generator: RouteGeneratorConfig::from_env()?,
         })
     }
@@ -415,6 +417,7 @@ mod tests {
             route_cache_ttl: 0,
             poi_region_cache_ttl: 0,
             snap_radius_m: 100.0,
+            mapbox_base_url: None,
             route_generator: RouteGeneratorConfig::default(),
         };
         assert_eq!(config.server_address(), "127.0.0.1:8080");

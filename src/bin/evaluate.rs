@@ -1,15 +1,17 @@
 use easyroute::config::Config;
+use easyroute::db::PgPoiRepository;
 use easyroute::evaluation::{
     compare, default_scenarios, format_comparison_report, format_report, load_baseline,
     save_baseline, Baseline, EvalScenario, MetricsAggregate, ScenarioResult,
 };
 use easyroute::models::{Route, RoutePreferences};
-use easyroute::services::mapbox::MapboxClient;
+use easyroute::services::mapbox::{AuthMode, MapboxClient};
 use easyroute::services::poi_service::PoiService;
 use easyroute::services::route_generator::RouteGenerator;
 use easyroute::services::snapping_service::SnappingService;
 use std::env;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const DEFAULT_BASELINE_PATH: &str = "evaluation/baseline.json";
@@ -73,9 +75,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sqlx::migrate!("./migrations").run(&db_pool).await?;
 
     // Initialize services
-    let mapbox_client = MapboxClient::new(config.mapbox_api_key.clone());
-    let poi_service = PoiService::new(db_pool.clone());
-    let snapping_service = SnappingService::new(db_pool.clone());
+    let poi_repo: Arc<dyn easyroute::db::PoiRepository> =
+        Arc::new(PgPoiRepository::new(db_pool.clone()));
+    let mapbox_client = if let Some(ref base_url) = config.mapbox_base_url {
+        MapboxClient::with_config(
+            config.mapbox_api_key.clone(),
+            base_url.clone(),
+            AuthMode::BearerHeader,
+        )
+    } else {
+        MapboxClient::new(config.mapbox_api_key.clone())
+    };
+    let poi_service = PoiService::new(poi_repo.clone());
+    let snapping_service = SnappingService::new(poi_repo.clone());
     let route_generator = RouteGenerator::new(
         mapbox_client,
         poi_service,

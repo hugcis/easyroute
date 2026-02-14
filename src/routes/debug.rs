@@ -2,19 +2,21 @@ use crate::db::queries;
 use crate::AppState;
 use axum::{extract::State, Json};
 use serde_json::{json, Value};
+use sqlx::PgPool;
 use std::sync::Arc;
 
-/// GET /debug/health - Check if services are working
+/// GET /debug/health - Check if services are working (works with any backend)
 pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<Value> {
     let mut status = json!({
         "status": "ok",
         "checks": {}
     });
 
-    // Check database
-    match sqlx::query("SELECT 1").fetch_one(&state.db_pool).await {
-        Ok(_) => {
+    // Database check via PoiRepository (works with any backend)
+    match state.poi_repo.count().await {
+        Ok(count) => {
             status["checks"]["database"] = json!("ok");
+            status["checks"]["poi_count"] = json!(count);
         }
         Err(e) => {
             status["checks"]["database"] = json!({"error": e.to_string()});
@@ -22,59 +24,31 @@ pub async fn health_check(State(state): State<Arc<AppState>>) -> Json<Value> {
         }
     }
 
-    // Check PostGIS extension
-    match sqlx::query("SELECT PostGIS_Version()")
-        .fetch_one(&state.db_pool)
-        .await
-    {
-        Ok(_) => {
-            status["checks"]["postgis"] = json!("ok");
-        }
-        Err(e) => {
-            status["checks"]["postgis"] = json!({"error": e.to_string()});
-            status["status"] = json!("error");
-        }
-    }
-
-    // Check POI count
-    match sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM pois")
-        .fetch_one(&state.db_pool)
-        .await
-    {
-        Ok(count) => {
-            status["checks"]["poi_count"] = json!(count);
-        }
-        Err(e) => {
-            status["checks"]["poi_count"] = json!({"error": e.to_string()});
-        }
-    }
-
-    // Check Redis cache
+    // Check cache
     if let Some(ref cache) = state.cache {
-        let mut cache_guard = cache.write().await;
-        if cache_guard.health_check().await {
-            let stats = cache_guard.get_stats().await;
-            status["checks"]["redis"] = json!({
+        if cache.health_check().await {
+            let stats = cache.get_stats().await;
+            status["checks"]["cache"] = json!({
                 "status": "ok",
+                "backend": cache.backend_name(),
                 "hits": stats.hits,
                 "misses": stats.misses,
                 "hit_rate": format!("{:.1}%", stats.hit_rate)
             });
         } else {
-            status["checks"]["redis"] =
-                json!({"status": "error", "message": "Redis connection failed"});
+            status["checks"]["cache"] = json!({"status": "error", "backend": cache.backend_name(), "message": "Cache connection failed"});
             status["status"] = json!("degraded");
         }
     } else {
-        status["checks"]["redis"] = json!({"status": "not_configured"});
+        status["checks"]["cache"] = json!({"status": "not_configured"});
     }
 
     Json(status)
 }
 
-/// GET /debug/coverage - Return convex hull of all POIs as GeoJSON
-pub async fn data_coverage(State(state): State<Arc<AppState>>) -> Json<Value> {
-    match queries::get_poi_coverage(&state.db_pool).await {
+/// GET /debug/coverage - Return convex hull of all POIs as GeoJSON (PostgreSQL only)
+pub async fn data_coverage(State(pool): State<PgPool>) -> Json<Value> {
+    match queries::get_poi_coverage(&pool).await {
         Ok((geojson_str, poi_count, cluster_count)) => {
             let coverage = geojson_str.and_then(|s| serde_json::from_str::<Value>(&s).ok());
 

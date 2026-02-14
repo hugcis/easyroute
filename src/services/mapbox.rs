@@ -5,10 +5,21 @@ use serde::{Deserialize, Serialize};
 
 const MAPBOX_DIRECTIONS_BASE_URL: &str = "https://api.mapbox.com/directions/v5/mapbox";
 
+/// How the client authenticates with the directions API.
+#[derive(Clone, Debug)]
+pub enum AuthMode {
+    /// Current default: send `access_token` query param (direct Mapbox).
+    DirectToken,
+    /// Proxy mode: send `Authorization: Bearer` header.
+    BearerHeader,
+}
+
 #[derive(Clone)]
 pub struct MapboxClient {
     client: Client,
     api_key: String,
+    base_url: String,
+    auth_mode: AuthMode,
 }
 
 impl MapboxClient {
@@ -16,6 +27,17 @@ impl MapboxClient {
         MapboxClient {
             client: Client::new(),
             api_key,
+            base_url: MAPBOX_DIRECTIONS_BASE_URL.to_string(),
+            auth_mode: AuthMode::DirectToken,
+        }
+    }
+
+    pub fn with_config(api_key: String, base_url: String, auth_mode: AuthMode) -> Self {
+        MapboxClient {
+            client: Client::new(),
+            api_key,
+            base_url,
+            auth_mode,
         }
     }
 
@@ -48,7 +70,7 @@ impl MapboxClient {
 
         let url = format!(
             "{}/{}/{}",
-            MAPBOX_DIRECTIONS_BASE_URL,
+            self.base_url,
             mode.mapbox_profile(),
             coordinates_str
         );
@@ -60,15 +82,22 @@ impl MapboxClient {
             waypoints.len(), mode.mapbox_profile()
         );
 
-        let response = self
-            .client
-            .get(&url)
-            .query(&[
-                ("geometries", "geojson"),
-                ("overview", "full"),
-                ("steps", "false"),
-                ("access_token", &self.api_key),
-            ])
+        let mut request = self.client.get(&url).query(&[
+            ("geometries", "geojson"),
+            ("overview", "full"),
+            ("steps", "false"),
+        ]);
+
+        match self.auth_mode {
+            AuthMode::DirectToken => {
+                request = request.query(&[("access_token", &self.api_key)]);
+            }
+            AuthMode::BearerHeader => {
+                request = request.bearer_auth(&self.api_key);
+            }
+        }
+
+        let response = request
             .send()
             .await
             .map_err(|e| AppError::MapboxApi(format!("Request failed: {}", e)))?;
@@ -178,6 +207,24 @@ impl DirectionsResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_new_defaults_to_direct_token() {
+        let client = MapboxClient::new("pk.test123".to_string());
+        assert_eq!(client.base_url, MAPBOX_DIRECTIONS_BASE_URL);
+        assert!(matches!(client.auth_mode, AuthMode::DirectToken));
+    }
+
+    #[test]
+    fn test_with_config_bearer_mode() {
+        let client = MapboxClient::with_config(
+            "my-key".to_string(),
+            "http://localhost:4000/v1/directions".to_string(),
+            AuthMode::BearerHeader,
+        );
+        assert_eq!(client.base_url, "http://localhost:4000/v1/directions");
+        assert!(matches!(client.auth_mode, AuthMode::BearerHeader));
+    }
 
     #[test]
     fn test_directions_response_conversions() {

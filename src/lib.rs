@@ -7,22 +7,22 @@ pub mod db;
 pub mod error;
 pub mod evaluation;
 pub mod models;
+#[cfg(feature = "sqlite")]
+pub mod osm;
 pub mod routes;
 pub mod services;
 
 // Re-export commonly used types
-pub use cache::{CacheService, CacheStats, RoutePreferencesHash};
+pub use cache::{CacheStats, RouteCache, RoutePreferencesHash};
 pub use error::{AppError, Result};
 
 // App state for sharing across the application
 use services::route_generator::RouteGenerator;
-use sqlx::PgPool;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 pub struct AppState {
-    pub db_pool: PgPool,
+    pub poi_repo: Arc<dyn db::PoiRepository>,
     pub route_generator: RouteGenerator,
-    /// Optional cache service - None if Redis is not configured
-    pub cache: Option<Arc<RwLock<CacheService>>>,
+    /// Optional cache service - None only in tests
+    pub cache: Option<Arc<dyn RouteCache>>,
 }

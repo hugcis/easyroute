@@ -222,13 +222,15 @@ mod tests {
 
     fn scorer_v1() -> RouteScorer {
         let pool = sqlx::PgPool::connect_lazy("postgres://localhost/fake").unwrap();
-        let snap = SnappingService::new(pool);
+        let repo = std::sync::Arc::new(crate::db::PgPoiRepository::new(pool));
+        let snap = SnappingService::new(repo);
         RouteScorer::new(snap, 100.0, RouteGeneratorConfig::default())
     }
 
     fn scorer_v2() -> RouteScorer {
         let pool = sqlx::PgPool::connect_lazy("postgres://localhost/fake").unwrap();
-        let snap = SnappingService::new(pool);
+        let repo = std::sync::Arc::new(crate::db::PgPoiRepository::new(pool));
+        let snap = SnappingService::new(repo);
         let config = RouteGeneratorConfig {
             scoring_version: 2,
             ..RouteGeneratorConfig::default()

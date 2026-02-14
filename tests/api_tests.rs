@@ -2,6 +2,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
+use easyroute::db::PgPoiRepository;
 use easyroute::models::route::LoopRouteRequest;
 use easyroute::models::{Coordinates, RoutePreferences, TransportMode};
 use easyroute::services::mapbox::MapboxClient;
@@ -19,9 +20,10 @@ async fn setup_test_app() -> axum::Router {
     let pool = common::setup_test_db().await;
     let config = common::get_test_config();
 
+    let poi_repo: Arc<dyn easyroute::db::PoiRepository> = Arc::new(PgPoiRepository::new(pool));
     let mapbox_client = MapboxClient::new(config.mapbox_api_key.clone());
-    let poi_service = PoiService::new(pool.clone());
-    let snapping_service = SnappingService::new(pool.clone());
+    let poi_service = PoiService::new(poi_repo.clone());
+    let snapping_service = SnappingService::new(poi_repo.clone());
     let route_generator = RouteGenerator::new(
         mapbox_client,
         poi_service,
@@ -31,7 +33,7 @@ async fn setup_test_app() -> axum::Router {
     );
 
     let state = Arc::new(AppState {
-        db_pool: pool,
+        poi_repo,
         route_generator,
         cache: None, // No Redis cache in tests
     });
