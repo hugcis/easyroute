@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "timestamp": "2026-02-11T21:56:00.224332Z",
+  "runs_per_scenario": 3,
+  "scenarios": [
+    {
+      "name": "monaco_3km_walk",
+      "success_rate": 1.0,
+      "metrics": {
+        "circularity": 0.06939161,
+        "convexity": 0.25918475,
+        "path_overlap_pct": 0.7542593,
+        "poi_density_per_km": 9.451155,
+        "category_entropy": 0.8299811,
+        "landmark_coverage": 0.59444445
+      }
+    },
+    {
+      "name": "monaco_5km_walk",
+      "success_rate": 1.0,
+      "metrics": {
+        "circularity": 0.21849649,
+        "convexity": 0.63463837,
+        "path_overlap_pct": 0.62581944,
+        "poi_density_per_km": 12.829872,
+        "category_entropy": 0.8215485,
+        "landmark_coverage": 0.75555557
+      }
+    },
+    {
+      "name": "monaco_3km_bike",
+      "success_rate": 1.0,
+      "metrics": {
+        "circularity": 0.018668907,
+        "convexity": 0.107669614,
+        "path_overlap_pct": 0.80840343,
+        "poi_density_per_km": 6.3690186,
+        "category_entropy": 0.8517652,
+        "landmark_coverage": 0.575
+      }
+    },
+    {
+      "name": "paris_1_5km_walk",
+      "success_rate": 1.0,
+      "metrics": {
+        "circularity": 0.25658008,
+        "convexity": 0.8246421,
+        "path_overlap_pct": 0.6315856,
+        "poi_density_per_km": 20.943115,
+        "category_entropy": 0.79182583,
+        "landmark_coverage": 0.7583333
+      }
+    },
+    {
+      "name": "paris_5km_walk",
+      "success_rate": 1.0,
+      "metrics": {
+        "circularity": 0.09250483,
+        "convexity": 0.28556198,
+        "path_overlap_pct": 0.93722504,
+        "poi_density_per_km": 24.54531,
+        "category_entropy": 0.75732064,
+        "landmark_coverage": 0.8
+      }
+    },
+    {
+      "name": "paris_12km_bike",
+      "success_rate": 1.0,
+      "metrics": {
+        "circularity": 0.18472081,
+        "convexity": 0.5526244,
+        "path_overlap_pct": 0.62886083,
+        "poi_density_per_km": 27.783926,
+        "category_entropy": 0.7041058,
+        "landmark_coverage": 0.7875001
+      }
+    },
+    {
+      "name": "prague_5km_walk",
+      "success_rate": 1.0,
+      "metrics": {
+        "circularity": 0.12478817,
+        "convexity": 0.38473725,
+        "path_overlap_pct": 0.8379388,
+        "poi_density_per_km": 17.314884,
+        "category_entropy": 0.41578254,
+        "landmark_coverage": 0.59166664
+      }
+    },
+    {
+      "name": "rennes_3km_walk",
+      "success_rate": 1.0,
+      "metrics": {
+        "circularity": 0.24516715,
+        "convexity": 0.52383375,
+        "path_overlap_pct": 0.60114336,
+        "poi_density_per_km": 7.093609,
+        "category_entropy": 0.9058481,
+        "landmark_coverage": 0.7138889
+      }
+    },
+    {
+      "name": "angers_5km_walk",
+      "success_rate": 1.0,
+      "metrics": {
+        "circularity": 0.0781231,
+        "convexity": 0.26504028,
+        "path_overlap_pct": 0.8670133,
+        "poi_density_per_km": 7.3332314,
+        "category_entropy": 0.8647526,
+        "landmark_coverage": 0.6
+      }
+    },
+    {
+      "name": "bretagne_rural_5km_walk",
+      "success_rate": 1.0,
+      "metrics": {
+        "circularity": 0.05381131,
+        "convexity": 0.17583694,
+        "path_overlap_pct": 0.87605995,
+        "poi_density_per_km": 2.8821762,
+        "category_entropy": 0.76991653,
+        "landmark_coverage": 0.65000004
+      }
+    },
+    {
+      "name": "ocean_3km_walk_geometric",
+      "success_rate": 0.0,
+      "metrics": null
+    }
+  ]
+}

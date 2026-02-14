@@ -49,6 +49,14 @@ pub fn default_scenarios() -> Vec<EvalScenario> {
             mode: TransportMode::Bike,
             expected_density: PoiDensityContext::Dense,
         },
+        // --- Paris long-walk (regression case: dense POI area, long route) ---
+        EvalScenario {
+            name: "paris_14km_walk".to_string(),
+            start: Coordinates::new(48.854, 2.3723).unwrap(),
+            distance_km: 14.5,
+            mode: TransportMode::Walk,
+            expected_density: PoiDensityContext::Dense,
+        },
         // --- Prague (cross-region validation) ---
         EvalScenario {
             name: "prague_5km_walk".to_string(),
@@ -62,6 +70,14 @@ pub fn default_scenarios() -> Vec<EvalScenario> {
             name: "rennes_3km_walk".to_string(),
             start: Coordinates::new(48.1173, -1.6778).unwrap(),
             distance_km: 3.0,
+            mode: TransportMode::Walk,
+            expected_density: PoiDensityContext::Moderate,
+        },
+        // --- Angers (clustered POIs, regression case) ---
+        EvalScenario {
+            name: "angers_5km_walk".to_string(),
+            start: Coordinates::new(47.4784, -0.5632).unwrap(),
+            distance_km: 5.0,
             mode: TransportMode::Walk,
             expected_density: PoiDensityContext::Moderate,
         },
