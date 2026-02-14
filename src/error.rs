@@ -75,3 +75,62 @@ impl IntoResponse for AppError {
 }
 
 pub type Result<T> = std::result::Result<T, AppError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    fn status_of(err: AppError) -> StatusCode {
+        err.into_response().status()
+    }
+
+    #[test]
+    fn database_error_500() {
+        let err = AppError::Database(sqlx::Error::PoolClosed);
+        assert_eq!(status_of(err), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn mapbox_api_error_502() {
+        let err = AppError::MapboxApi("timeout".into());
+        assert_eq!(status_of(err), StatusCode::BAD_GATEWAY);
+    }
+
+    #[test]
+    fn cache_error_500() {
+        let err = AppError::Cache("connection lost".into());
+        assert_eq!(status_of(err), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn invalid_request_400() {
+        let err = AppError::InvalidRequest("bad field".into());
+        assert_eq!(status_of(err), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn route_generation_500() {
+        let err = AppError::RouteGeneration("no routes found".into());
+        assert_eq!(status_of(err), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn no_pois_found_404() {
+        let err = AppError::NoPoisFound("empty area".into());
+        assert_eq!(status_of(err), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn not_found_404() {
+        let err = AppError::NotFound("missing resource".into());
+        assert_eq!(status_of(err), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn internal_500() {
+        let err = AppError::Internal("unexpected".into());
+        assert_eq!(status_of(err), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+}
