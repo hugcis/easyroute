@@ -14,12 +14,6 @@ pub const DEFAULT_SNAP_RADIUS_METERS: f64 = 100.0;
 pub const MIN_ALTERNATIVES_FOR_SUCCESS: u32 = 3; // Generate at least 3 alternatives
 pub const MAX_ALTERNATIVES_CLAMP: u32 = 5;
 
-// Distance calculation multipliers
-pub const DISTANCE_ADJUSTMENT_INITIAL_MULTIPLIER: f64 = 1.0;
-pub const DISTANCE_ADJUSTMENT_INITIAL_STEP: f64 = 0.15;
-pub const DISTANCE_ADJUSTMENT_AGGRESSIVE_MULTIPLIER: f64 = 0.9;
-pub const DISTANCE_ADJUSTMENT_AGGRESSIVE_STEP: f64 = 0.1;
-
 // Waypoint selection thresholds (for medium/long route classification)
 pub const WAYPOINTS_MEDIUM_ROUTE_DISTANCE_KM: f64 = 5.0;
 pub const WAYPOINTS_LONG_ROUTE_MIN_POIS: usize = 6;
@@ -41,3 +35,8 @@ pub const OVERPASS_RETRY_MAX_ATTEMPTS: usize = 2; // Total of 3 attempts (0, 1, 
 pub const OVERPASS_RETRY_EXTENDED_MAX_ATTEMPTS: usize = 2; // For single queries
 pub const OVERPASS_HTTP_TOO_MANY_REQUESTS: u16 = 429;
 pub const OVERPASS_HTTP_GATEWAY_TIMEOUT: u16 = 504;
+
+// Distance correction feedback loop
+pub const DISTANCE_CORRECTION_DAMPING: f64 = 0.7;
+pub const DISTANCE_CORRECTION_MIN: f64 = 0.5;
+pub const DISTANCE_CORRECTION_MAX: f64 = 2.5;
