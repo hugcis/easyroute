@@ -138,5 +138,87 @@ struct BoundingBox {
 
 #[cfg(test)]
 mod tests {
-    // Note: Tests requiring database connection are in integration tests
+    use super::*;
+
+    fn c(lat: f64, lng: f64) -> Coordinates {
+        Coordinates::new(lat, lng).unwrap()
+    }
+
+    fn service() -> SnappingService {
+        let pool = sqlx::PgPool::connect_lazy("postgres://localhost/fake").unwrap();
+        SnappingService::new(pool)
+    }
+
+    #[tokio::test]
+    async fn bbox_single_segment() {
+        let svc = service();
+        let path = vec![c(48.85, 2.35), c(48.86, 2.36)];
+        let bbox = svc.calculate_bbox_with_buffer(&path, 0.0);
+        assert!((bbox.min_lat - 48.85).abs() < 1e-10);
+        assert!((bbox.max_lat - 48.86).abs() < 1e-10);
+        assert!((bbox.min_lng - 2.35).abs() < 1e-10);
+        assert!((bbox.max_lng - 2.36).abs() < 1e-10);
+    }
+
+    #[tokio::test]
+    async fn bbox_buffer_expansion() {
+        let svc = service();
+        let path = vec![c(48.85, 2.35), c(48.86, 2.36)];
+        let buffer_m = 1000.0; // 1km
+        let bbox = svc.calculate_bbox_with_buffer(&path, buffer_m);
+        let lat_buffer = buffer_m / 111_000.0;
+        assert!((bbox.min_lat - (48.85 - lat_buffer)).abs() < 1e-10);
+        assert!((bbox.max_lat - (48.86 + lat_buffer)).abs() < 1e-10);
+    }
+
+    #[tokio::test]
+    async fn bbox_longitude_buffer_widens_at_higher_latitude() {
+        let svc = service();
+        let buffer_m = 1000.0;
+        let lat_buffer = buffer_m / 111_000.0;
+
+        // Near equator
+        let path_eq = vec![c(1.0, 10.0), c(1.0, 10.0)];
+        let bbox_eq = svc.calculate_bbox_with_buffer(&path_eq, buffer_m);
+        let lng_buf_eq = (bbox_eq.max_lng - 10.0) - 0.0; // extra beyond original
+
+        // At 60° latitude
+        let path_60 = vec![c(60.0, 10.0), c(60.0, 10.0)];
+        let bbox_60 = svc.calculate_bbox_with_buffer(&path_60, buffer_m);
+        let lng_buf_60 = bbox_60.max_lng - 10.0;
+
+        // Longitude buffer should be wider at higher latitude (cos correction)
+        assert!(
+            lng_buf_60 > lng_buf_eq,
+            "lng_buf_60={lng_buf_60}, lng_buf_eq={lng_buf_eq}"
+        );
+        // Lat buffer should be same regardless
+        assert!((bbox_eq.max_lat - (1.0 + lat_buffer)).abs() < 1e-10);
+        assert!((bbox_60.max_lat - (60.0 + lat_buffer)).abs() < 1e-10);
+    }
+
+    #[tokio::test]
+    async fn bbox_near_poles_fallback() {
+        let svc = service();
+        let path = vec![c(86.0, 10.0), c(86.0, 10.0)];
+        let bbox = svc.calculate_bbox_with_buffer(&path, 1000.0);
+        let lat_buffer = 1000.0 / 111_000.0;
+        // Near poles: lng_buffer should equal lat_buffer (conservative)
+        let lng_buffer = bbox.max_lng - 10.0;
+        assert!(
+            (lng_buffer - lat_buffer).abs() < 1e-10,
+            "lng_buffer={lng_buffer}, lat_buffer={lat_buffer}"
+        );
+    }
+
+    #[tokio::test]
+    async fn bbox_multi_point_envelope() {
+        let svc = service();
+        let path = vec![c(48.85, 2.35), c(48.87, 2.33), c(48.86, 2.38)];
+        let bbox = svc.calculate_bbox_with_buffer(&path, 0.0);
+        assert!((bbox.min_lat - 48.85).abs() < 1e-10);
+        assert!((bbox.max_lat - 48.87).abs() < 1e-10);
+        assert!((bbox.min_lng - 2.33).abs() < 1e-10);
+        assert!((bbox.max_lng - 2.38).abs() < 1e-10);
+    }
 }
