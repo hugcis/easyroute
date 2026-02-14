@@ -123,3 +123,39 @@ fn pseudo_random_f64(seed: u64, index: usize) -> f64 {
     x ^= x >> 33;
     (x as f64) / (u64::MAX as f64)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pseudo_random_in_range() {
+        for seed in [0, 1, 42, 999, u64::MAX] {
+            for idx in 0..20 {
+                let v = pseudo_random_f64(seed, idx);
+                assert!((0.0..1.0).contains(&v), "seed={seed}, idx={idx}, v={v}");
+            }
+        }
+    }
+
+    #[test]
+    fn pseudo_random_deterministic() {
+        let a = pseudo_random_f64(42, 7);
+        let b = pseudo_random_f64(42, 7);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn pseudo_random_varies_with_index() {
+        let a = pseudo_random_f64(42, 0);
+        let b = pseudo_random_f64(42, 1);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn pseudo_random_varies_with_seed() {
+        let a = pseudo_random_f64(1, 0);
+        let b = pseudo_random_f64(2, 0);
+        assert_ne!(a, b);
+    }
+}
