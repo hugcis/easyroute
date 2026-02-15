@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>EasyRoute</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+    <script src='https://api.mapbox.com/mapbox-gl-js/v3.0.0/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v3.0.0/mapbox-gl.css' rel='stylesheet' />
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="map">
+    <div class="map-crosshair"></div>
+    <div class="map-center-display" id="mapCenterDisplay">48.8566, 2.3522</div>
+    <button class="locate-btn" id="locateBtn" onclick="locateOnMap()" aria-label="My location">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round">
+            <circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+        </svg>
+    </button>
+</div>
+
+<div class="panel">
+    <div class="panel-handle"></div>
+    <div class="panel-title">EasyRoute</div>
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('generate')">Generate</button>
+        <button class="tab" onclick="switchTab('paste')">Paste JSON</button>
+    </div>
+
+    <div id="generateTab" class="tab-content active">
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Start Lat</label>
+                <input type="number" id="startLat" value="48.8566" step="0.0001">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Start Lng</label>
+                <input type="number" id="startLng" value="2.3522" step="0.0001">
+            </div>
+        </div>
+        <div class="sync-row">
+            <div class="sync-toggle on" id="syncToggle" onclick="toggleSync()"></div>
+            <span class="sync-label">Sync with map center</span>
+            <button class="btn-sm" id="geolocateBtn" onclick="useMyLocation()">Use my location</button>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Distance (km)</label>
+                <input type="number" id="distance" value="5.0" step="0.5" min="0.5" max="50">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Mode</label>
+                <select id="mode">
+                    <option value="walk">Walking</option>
+                    <option value="bike">Cycling</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">POI Categories</label>
+            <div class="cat-dropdown" id="catDropdown">
+                <div class="cat-trigger" onclick="toggleCatPopover()">
+                    <span id="catLabel">All categories</span>
+                    <span class="arrow" id="catArrow">&#9662;</span>
+                </div>
+                <div class="cat-popover" id="catPopover">
+                    <div class="cat-popover-actions">
+                        <a onclick="selectAllCats()">All</a>
+                        <a onclick="clearAllCats()">None</a>
+                    </div>
+                    <div id="catPills"></div>
+                </div>
+            </div>
+        </div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="hiddenGems">
+            <label for="hiddenGems">Prefer hidden gems</label>
+        </div>
+        <button class="btn-primary" onclick="generateRoute()" id="generateBtn">Generate Route</button>
+        <div id="errorMsg" style="display: none;"></div>
+    </div>
+
+    <div id="pasteTab" class="tab-content">
+        <p style="font-size:12px;color:#999;margin:0 0 6px">Paste API response JSON:</p>
+        <textarea class="api-input" id="apiResponse" placeholder='{"routes": [...]}'></textarea>
+        <button class="btn-primary" onclick="visualizeRoutes()">Visualize</button>
+    </div>
+
+    <div id="routeInfo" class="route-section" style="display: none;"></div>
+    <div id="poiFilter" style="display: none;"></div>
+</div>
+
+<script src="main.js"></script>
+</body>
+</html>
