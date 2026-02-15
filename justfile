@@ -109,6 +109,21 @@ ondevice REGION='regions/ile-de-france.db' *ARGS='':
 build-ondevice:
     cargo build --features sqlite --bin ondevice --release
 
+# Build static library for iOS device (arm64)
+[group('mobile')]
+build-ios:
+    cargo build --target aarch64-apple-ios --features mobile --lib --release
+
+# Build static library for iOS simulator (arm64)
+[group('mobile')]
+build-ios-sim:
+    cargo build --target aarch64-apple-ios-sim --features mobile --lib --release
+
+# Check mobile feature compiles
+[group('mobile')]
+check-mobile:
+    cargo check --features mobile --lib
+
 # Open the route visualizer in the browser
 [group('dev')]
 open:

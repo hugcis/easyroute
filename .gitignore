@@ -17,10 +17,17 @@
 
 # Database
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 
 # Logs
 *.log
+
+# iOS / Xcode
+xcuserdata/
+*.xcworkspace
+DerivedData/
 
 # Claude Code
 .claude/
