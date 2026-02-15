@@ -6,6 +6,10 @@ pub mod constants;
 pub mod db;
 pub mod error;
 pub mod evaluation;
+#[cfg(feature = "mobile")]
+pub mod ffi;
+#[cfg(feature = "mobile")]
+pub mod mobile;
 pub mod models;
 #[cfg(feature = "sqlite")]
 pub mod osm;
