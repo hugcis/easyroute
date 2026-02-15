@@ -46,7 +46,7 @@ struct ContentView: View {
                 onRoutesGenerated: fitCameraToRoute
             )
             .presentationDetents(
-                [.height(80), .medium, .large],
+                [.height(120), .medium, .large],
                 selection: $selectedDetent
             )
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
@@ -61,6 +61,6 @@ struct ContentView: View {
         withAnimation(.easeInOut(duration: 0.5)) {
             cameraPosition = RouteMapView.cameraFitting(route: route)
         }
-        selectedDetent = .medium
+        selectedDetent = .height(120)
     }
 }

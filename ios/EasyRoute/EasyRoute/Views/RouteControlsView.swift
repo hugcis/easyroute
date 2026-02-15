@@ -12,24 +12,18 @@ struct RouteControlsView: View {
     @State private var showShareSheet = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Drag handle
-            Capsule()
-                .fill(.quaternary)
-                .frame(width: 36, height: 5)
-                .padding(.top, 8)
-                .padding(.bottom, 12)
-
-            ScrollView {
-                VStack(spacing: 16) {
-                    controlsSection
-                    generateButton
-                    errorBanner
-                    routeCardsSection
-                }
-                .padding(.horizontal)
-                .padding(.bottom, 20)
+        ScrollView {
+            VStack(spacing: 16) {
+                remainingControls
+                generateButton
+                errorBanner
+                routeCardsSection
             }
+            .padding(.horizontal)
+            .padding(.bottom, 20)
+        }
+        .safeAreaInset(edge: .top) {
+            pinnedHeader
         }
         .sheet(isPresented: $showShareSheet) {
             if let url = gpxShareURL {
@@ -38,31 +32,28 @@ struct RouteControlsView: View {
         }
     }
 
-    // MARK: - Controls Section
+    // MARK: - Pinned Header (visible at collapsed detent)
 
-    @ViewBuilder
-    private var controlsSection: some View {
-        VStack(spacing: 14) {
-            // Coordinate display
-            if let center = routeState.mapCenter {
-                HStack {
-                    Image(systemName: "mappin.and.ellipse")
-                        .foregroundStyle(.red)
-                    Text(String(format: "%.4f, %.4f", center.latitude, center.longitude))
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-            }
+    private var pinnedHeader: some View {
+        VStack(spacing: 8) {
+            Capsule()
+                .fill(.quaternary)
+                .frame(width: 36, height: 5)
+                .padding(.top, 8)
 
-            // Distance slider
-            VStack(alignment: .leading, spacing: 4) {
+            // Distance slider with inline coordinates
+            VStack(spacing: 4) {
                 HStack {
                     Text("Distance")
                         .font(.subheadline.weight(.medium))
                     Spacer()
+                    if let center = routeState.mapCenter {
+                        Text(String(format: "%.4f, %.4f", center.latitude, center.longitude))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    }
                     Text(String(format: "%.1f km", routeState.distanceKm))
-                        .font(.subheadline.monospacedDigit())
+                        .font(.subheadline.monospacedDigit().weight(.medium))
                         .foregroundStyle(.secondary)
                 }
                 Slider(value: Binding(
@@ -70,7 +61,17 @@ struct RouteControlsView: View {
                     set: { routeState.distanceKm = $0 }
                 ), in: 1...20, step: 0.5)
             }
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+        }
+        .background(.regularMaterial)
+    }
 
+    // MARK: - Remaining Controls (in scroll area)
+
+    @ViewBuilder
+    private var remainingControls: some View {
+        VStack(spacing: 14) {
             // Mode toggle
             HStack {
                 Text("Mode")
