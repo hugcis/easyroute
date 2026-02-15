@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>MAPBOX_API_KEY</key>
+	<string>$(MAPBOX_API_KEY)</string>
+	<key>MAPBOX_GL_TOKEN</key>
+	<string>$(MAPBOX_GL_TOKEN)</string>
+	<key>MAPBOX_BASE_URL</key>
+	<string>$(MAPBOX_BASE_URL)</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>EasyRoute uses your location to generate walking and cycling routes starting from where you are.</string>
+</dict>
+</plist>
