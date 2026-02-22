@@ -10,6 +10,19 @@ struct RouteMapView: View {
             mapContent
             centerPin
         }
+        .sheet(isPresented: Binding(
+            get: { routeState.selectedPoi != nil },
+            set: { if !$0 { routeState.selectedPoi = nil } }
+        )) {
+            if let poi = routeState.selectedPoi {
+                POIDetailView(poi: poi) {
+                    routeState.selectedPoi = nil
+                }
+                .presentationDetents([.height(200), .medium])
+                .presentationDragIndicator(.visible)
+                .presentationBackgroundInteraction(.enabled(upThrough: .height(200)))
+            }
+        }
     }
 
     private var mapContent: some View {
@@ -32,6 +45,10 @@ struct RouteMapView: View {
                 ForEach(route.pois) { poi in
                     Annotation(poi.name, coordinate: poi.coordinates.clLocationCoordinate) {
                         WaypointMarkerView(order: poi.orderInRoute, category: poi.category)
+                            .contentShape(Circle().size(width: 44, height: 44))
+                            .onTapGesture {
+                                routeState.selectedPoi = .waypoint(poi)
+                            }
                     }
                 }
 
@@ -39,6 +56,10 @@ struct RouteMapView: View {
                 ForEach(route.snappedPois) { poi in
                     Annotation(poi.name, coordinate: poi.coordinates.clLocationCoordinate) {
                         SnappedMarkerView(category: poi.category)
+                            .contentShape(Circle().size(width: 44, height: 44))
+                            .onTapGesture {
+                                routeState.selectedPoi = .snapped(poi)
+                            }
                     }
                 }
             }
@@ -50,6 +71,7 @@ struct RouteMapView: View {
         }
         .onMapCameraChange(frequency: .onEnd) { context in
             routeState.mapCenter = context.region.center
+            routeState.selectedPoi = nil
         }
     }
 
