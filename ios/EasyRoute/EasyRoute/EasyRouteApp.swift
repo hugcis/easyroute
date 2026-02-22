@@ -3,12 +3,18 @@ import SwiftUI
 @main
 struct EasyRouteApp: App {
     @StateObject private var server = ServerBridge()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(server)
                 .onAppear { startServer() }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active {
+                        server.ensureRunning()
+                    }
+                }
         }
     }
 
