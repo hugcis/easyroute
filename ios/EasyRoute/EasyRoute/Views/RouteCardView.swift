@@ -22,8 +22,18 @@ struct RouteCardView: View {
                     .font(.subheadline)
                 Label("\(route.estimatedDurationMinutes) min", systemImage: "clock")
                     .font(.subheadline)
+                if let gain = route.elevationGainM, gain > 0 {
+                    Label(String(format: "%.0f m", gain), systemImage: "arrow.up.right")
+                        .font(.subheadline)
+                }
             }
             .foregroundStyle(.secondary)
+
+            if let m = route.metrics {
+                metricsRow(m)
+            }
+
+            categoryChips
 
             HStack(spacing: 12) {
                 Label("\(route.pois.count) waypoints", systemImage: "mappin.and.ellipse")
@@ -52,6 +62,87 @@ struct RouteCardView: View {
                         .stroke(isSelected ? Color.accentColor : .clear, lineWidth: 2)
                 )
         )
+    }
+
+    // MARK: - Metrics row
+
+    private func metricsRow(_ m: RouteMetrics) -> some View {
+        HStack(spacing: 10) {
+            if let v = m.circularity {
+                metricGauge(label: "Loop", value: v)
+            }
+            if let v = m.pathOverlapPct {
+                metricGauge(label: "Unique", value: max(0, 1.0 - v))
+            }
+            if let v = m.poiDensityPerKm {
+                // Normalize: 2+ POIs/km → 1.0
+                metricGauge(label: "Density", value: min(1.0, v / 2.0))
+            }
+        }
+    }
+
+    private func metricGauge(label: String, value: Float) -> some View {
+        VStack(spacing: 2) {
+            Text(label)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+            GeometryReader { _ in
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(width: 20, height: 4)
+                    .overlay(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(gaugeColor(value))
+                            .frame(width: 20 * CGFloat(min(1, max(0, value))), height: 4)
+                    }
+            }
+            .frame(width: 20, height: 4)
+        }
+    }
+
+    private func gaugeColor(_ value: Float) -> Color {
+        if value >= 0.7 { return .green }
+        if value >= 0.4 { return .orange }
+        return .red
+    }
+
+    // MARK: - Category chips
+
+    private var categoryChips: some View {
+        let allPois: [(String, String)] = route.pois.map { ($0.category, $0.category) }
+            + route.snappedPois.map { ($0.category, $0.category) }
+        let uniqueCategories = Array(
+            Dictionary(grouping: allPois, by: \.0).keys.sorted()
+        )
+        let maxShown = 5
+        let shown = Array(uniqueCategories.prefix(maxShown))
+        let overflow = uniqueCategories.count - maxShown
+
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                ForEach(shown, id: \.self) { cat in
+                    let info = POICategories.info(for: cat)
+                    HStack(spacing: 3) {
+                        Image(systemName: info.symbol)
+                            .font(.system(size: 8))
+                        Text(info.label)
+                            .font(.system(size: 9))
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(info.color.opacity(0.15)))
+                    .foregroundStyle(info.color)
+                }
+                if overflow > 0 {
+                    Text("+\(overflow)")
+                        .font(.system(size: 9).bold())
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(.quaternary))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 
     private var scoreColor: Color {
