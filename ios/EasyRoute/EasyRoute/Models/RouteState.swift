@@ -14,6 +14,7 @@ final class RouteState {
     var selectedRouteIndex: Int = 0
     var isLoading: Bool = false
     var error: String?
+    var selectedPoi: SelectedPoi?
 
     var selectedRoute: Route? {
         guard selectedRouteIndex < routes.count else { return nil }
@@ -23,6 +24,7 @@ final class RouteState {
     func clearRoutes() {
         routes = []
         selectedRouteIndex = 0
+        selectedPoi = nil
         error = nil
     }
 }
