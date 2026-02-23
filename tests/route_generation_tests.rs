@@ -10,13 +10,9 @@ use std::sync::Arc;
 mod common;
 
 #[tokio::test]
+#[ignore]
 #[serial]
 async fn test_route_generation_with_database_pois() {
-    if common::should_skip_real_api_tests() {
-        println!("Skipping real API test");
-        return;
-    }
-
     let pool = common::setup_test_db().await;
     common::cleanup_test_db(&pool).await;
 
@@ -91,13 +87,9 @@ async fn test_route_generation_with_database_pois() {
 }
 
 #[tokio::test]
+#[ignore]
 #[serial]
 async fn test_route_generation_distance_validation() {
-    if common::should_skip_real_api_tests() {
-        println!("Skipping real API test");
-        return;
-    }
-
     let pool = common::setup_test_db().await;
     common::cleanup_test_db(&pool).await;
 
@@ -159,13 +151,9 @@ async fn test_route_generation_distance_validation() {
 }
 
 #[tokio::test]
+#[ignore]
 #[serial]
 async fn test_route_poi_ordering() {
-    if common::should_skip_real_api_tests() {
-        println!("Skipping real API test");
-        return;
-    }
-
     let pool = common::setup_test_db().await;
     common::cleanup_test_db(&pool).await;
 
@@ -229,13 +217,9 @@ async fn test_route_poi_ordering() {
 }
 
 #[tokio::test]
+#[ignore]
 #[serial]
 async fn test_route_scoring_different_preferences() {
-    if common::should_skip_real_api_tests() {
-        println!("Skipping real API test");
-        return;
-    }
-
     let pool = common::setup_test_db().await;
     common::cleanup_test_db(&pool).await;
 
@@ -291,13 +275,9 @@ async fn test_route_scoring_different_preferences() {
 }
 
 #[tokio::test]
+#[ignore]
 #[serial]
 async fn test_route_alternatives_use_different_waypoint_counts() {
-    if common::should_skip_real_api_tests() {
-        println!("Skipping real API test");
-        return;
-    }
-
     let pool = common::setup_test_db().await;
     common::cleanup_test_db(&pool).await;
 

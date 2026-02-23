@@ -24,11 +24,11 @@ cargo run --bin proxy
 # Run evaluation harness
 cargo run --bin evaluate -- --scenario=monaco --runs=5
 
-# Fast tests (skips Mapbox/external API calls)
-SKIP_REAL_API_TESTS=true cargo test
-
-# Full tests (requires MAPBOX_API_KEY in .env)
+# Fast tests (DB/Mapbox tests are #[ignore]'d by default)
 cargo test
+
+# Full tests including DB + Mapbox (requires running PostgreSQL + MAPBOX_API_KEY)
+cargo test -- --include-ignored
 
 # Single test / integration tests only
 cargo test test_waypoint_selection
@@ -41,7 +41,7 @@ cargo fmt && cargo clippy -- -D warnings
 cargo check
 ```
 
-Database tests use `easyroute_test` (via `TEST_DATABASE_URL`), run serially via `serial_test`. Test utilities in `tests/common/mod.rs`.
+Tests requiring external services (PostgreSQL, Mapbox API) are marked `#[ignore]` and skipped by default. Run them with `cargo test -- --include-ignored` when DB and API keys are available. Database tests use `easyroute_test` (via `TEST_DATABASE_URL`), run serially via `serial_test`. Test utilities in `tests/common/mod.rs`.
 
 ## Project Structure
 
@@ -244,9 +244,9 @@ Geofabrik extracts: `monaco` (test), `europe/france` (production), any region fr
 ## Troubleshooting
 
 - **"Connection refused"**: Ensure `docker-compose up -d postgres redis`, check `DATABASE_URL`
-- **Tests failing with Mapbox errors**: Set `MAPBOX_API_KEY` in `.env` or use `SKIP_REAL_API_TESTS=true`
+- **Tests failing with Mapbox/DB errors**: These tests are `#[ignore]`'d by default. Run with `cargo test -- --include-ignored` only when services are available
 - **PostGIS not found**: Use `postgis/postgis` Docker image, not plain `postgres`
-- **Slow tests**: Use `SKIP_REAL_API_TESTS=true` for fast iteration (~10-20s vs ~60-120s)
+- **Slow tests**: `cargo test` is fast by default (~5s). Only `--include-ignored` adds DB/API latency
 
 ## Supplementary Documentation
 

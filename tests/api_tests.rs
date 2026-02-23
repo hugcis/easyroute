@@ -42,10 +42,8 @@ async fn setup_test_app() -> axum::Router {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_health_check_endpoint() {
-    if common::should_skip_real_api_tests() {
-        return;
-    }
     let app = setup_test_app().await;
 
     let request = Request::builder()
@@ -67,10 +65,8 @@ async fn test_health_check_endpoint() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_loop_route_endpoint_validation() {
-    if common::should_skip_real_api_tests() {
-        return;
-    }
     let app = setup_test_app().await;
 
     // Test with invalid distance (too small)

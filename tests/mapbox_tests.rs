@@ -4,12 +4,8 @@ use easyroute::services::mapbox::MapboxClient;
 mod common;
 
 #[tokio::test]
+#[ignore]
 async fn test_mapbox_walking_directions() {
-    if common::should_skip_real_api_tests() {
-        println!("Skipping real API test");
-        return;
-    }
-
     let api_key =
         std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY must be set for integration tests");
     let client = MapboxClient::new(api_key);
@@ -50,12 +46,8 @@ async fn test_mapbox_walking_directions() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_mapbox_loop_route() {
-    if common::should_skip_real_api_tests() {
-        println!("Skipping real API test");
-        return;
-    }
-
     let api_key =
         std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY must be set for integration tests");
     let client = MapboxClient::new(api_key);
@@ -91,12 +83,8 @@ async fn test_mapbox_loop_route() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_mapbox_bike_mode() {
-    if common::should_skip_real_api_tests() {
-        println!("Skipping real API test");
-        return;
-    }
-
     let api_key =
         std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY must be set for integration tests");
     let client = MapboxClient::new(api_key);
@@ -118,12 +106,8 @@ async fn test_mapbox_bike_mode() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_mapbox_invalid_coordinates() {
-    if common::should_skip_real_api_tests() {
-        println!("Skipping real API test");
-        return;
-    }
-
     let api_key = std::env::var("MAPBOX_API_KEY").expect("MAPBOX_API_KEY must be set");
     let client = MapboxClient::new(api_key);
 

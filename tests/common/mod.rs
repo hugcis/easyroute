@@ -73,9 +73,3 @@ pub fn get_test_config() -> Config {
         route_generator: easyroute::config::RouteGeneratorConfig::default(),
     }
 }
-
-/// Check if we should skip real API tests
-#[allow(dead_code)]
-pub fn should_skip_real_api_tests() -> bool {
-    std::env::var("SKIP_REAL_API_TESTS").is_ok()
-}
