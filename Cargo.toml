@@ -50,7 +50,7 @@ async-trait = "0.1"
 [dev-dependencies]
 tokio-test = "0.4"
 tower = { version = "0.5", features = ["util"] }
-serial_test = "3.3"
+serial_test = "3.4"
 
 [lib]
 name = "easyroute"
