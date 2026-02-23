@@ -32,17 +32,18 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
     private var mainContent: some View {
         RouteMapView(
             routeState: routeState,
-            cameraPosition: $cameraPosition
+            cameraPosition: $cameraPosition,
+            selectedDetent: selectedDetent
         )
         .sheet(isPresented: .constant(true)) {
             RouteControlsView(
                 routeState: routeState,
                 locationManager: locationManager,
                 apiClient: apiClient,
+                selectedDetent: selectedDetent,
                 onRoutesGenerated: fitCameraToRoute
             )
             .presentationDetents(
@@ -50,6 +51,7 @@ struct ContentView: View {
                 selection: $selectedDetent
             )
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+            .presentationDragIndicator(.hidden)
             .interactiveDismissDisabled()
         }
     }
