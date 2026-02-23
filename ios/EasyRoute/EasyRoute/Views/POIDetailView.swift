@@ -16,7 +16,7 @@ struct POIDetailView: View {
             infoChips
         }
         .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     // MARK: - Header
@@ -55,23 +55,18 @@ struct POIDetailView: View {
         }
     }
 
-    @ViewBuilder
     private var badge: some View {
-        if let order = poi.orderInRoute {
-            Text("Stop #\(order)")
-                .font(.caption2.bold())
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Capsule().fill(.blue.opacity(0.15)))
-                .foregroundStyle(.blue)
+        let (text, color): (String, Color) = if let order = poi.orderInRoute {
+            ("Stop #\(order)", .blue)
         } else {
-            Text("Nearby")
-                .font(.caption2.bold())
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Capsule().fill(.orange.opacity(0.15)))
-                .foregroundStyle(.orange)
+            ("Nearby", .orange)
         }
+        return Text(text)
+            .font(.caption2.bold())
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(color.opacity(0.15)))
+            .foregroundStyle(color)
     }
 
     // MARK: - Info chips

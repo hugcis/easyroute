@@ -98,7 +98,20 @@ struct Coordinates: Codable {
     }
 }
 
-struct RoutePoi: Decodable, Identifiable {
+// MARK: - Shared POI protocol
+
+protocol PoiInfo {
+    var id: UUID { get }
+    var name: String { get }
+    var category: String { get }
+    var coordinates: Coordinates { get }
+    var popularityScore: Float { get }
+    var description: String? { get }
+    var distanceFromStartKm: Double { get }
+    var estimatedVisitDurationMinutes: Int? { get }
+}
+
+struct RoutePoi: Decodable, Identifiable, Equatable, PoiInfo {
     let id: UUID
     let name: String
     let category: String
@@ -108,6 +121,8 @@ struct RoutePoi: Decodable, Identifiable {
     let orderInRoute: Int
     let distanceFromStartKm: Double
     let estimatedVisitDurationMinutes: Int?
+
+    static func == (lhs: RoutePoi, rhs: RoutePoi) -> Bool { lhs.id == rhs.id }
 
     enum CodingKeys: String, CodingKey {
         case id, name, category, coordinates
@@ -119,7 +134,7 @@ struct RoutePoi: Decodable, Identifiable {
     }
 }
 
-struct SnappedPoi: Decodable, Identifiable {
+struct SnappedPoi: Decodable, Identifiable, Equatable, PoiInfo {
     let id: UUID
     let name: String
     let category: String
@@ -129,6 +144,8 @@ struct SnappedPoi: Decodable, Identifiable {
     let distanceFromStartKm: Double
     let distanceFromPathM: Float
     let estimatedVisitDurationMinutes: Int?
+
+    static func == (lhs: SnappedPoi, rhs: SnappedPoi) -> Bool { lhs.id == rhs.id }
 
     enum CodingKeys: String, CodingKey {
         case id, name, category, coordinates
@@ -146,74 +163,30 @@ enum SelectedPoi: Identifiable, Equatable {
     case waypoint(RoutePoi)
     case snapped(SnappedPoi)
 
-    var id: UUID {
+    private var poi: any PoiInfo {
         switch self {
-        case .waypoint(let poi): poi.id
-        case .snapped(let poi): poi.id
+        case .waypoint(let poi): poi
+        case .snapped(let poi): poi
         }
     }
 
-    var name: String {
-        switch self {
-        case .waypoint(let poi): poi.name
-        case .snapped(let poi): poi.name
-        }
-    }
-
-    var category: String {
-        switch self {
-        case .waypoint(let poi): poi.category
-        case .snapped(let poi): poi.category
-        }
-    }
-
-    var coordinates: Coordinates {
-        switch self {
-        case .waypoint(let poi): poi.coordinates
-        case .snapped(let poi): poi.coordinates
-        }
-    }
-
-    var popularityScore: Float {
-        switch self {
-        case .waypoint(let poi): poi.popularityScore
-        case .snapped(let poi): poi.popularityScore
-        }
-    }
-
-    var description: String? {
-        switch self {
-        case .waypoint(let poi): poi.description
-        case .snapped(let poi): poi.description
-        }
-    }
-
-    var distanceFromStartKm: Double {
-        switch self {
-        case .waypoint(let poi): poi.distanceFromStartKm
-        case .snapped(let poi): poi.distanceFromStartKm
-        }
-    }
-
-    var estimatedVisitDurationMinutes: Int? {
-        switch self {
-        case .waypoint(let poi): poi.estimatedVisitDurationMinutes
-        case .snapped(let poi): poi.estimatedVisitDurationMinutes
-        }
-    }
+    var id: UUID { poi.id }
+    var name: String { poi.name }
+    var category: String { poi.category }
+    var coordinates: Coordinates { poi.coordinates }
+    var popularityScore: Float { poi.popularityScore }
+    var description: String? { poi.description }
+    var distanceFromStartKm: Double { poi.distanceFromStartKm }
+    var estimatedVisitDurationMinutes: Int? { poi.estimatedVisitDurationMinutes }
 
     var orderInRoute: Int? {
-        switch self {
-        case .waypoint(let poi): poi.orderInRoute
-        case .snapped: nil
-        }
+        if case .waypoint(let poi) = self { return poi.orderInRoute }
+        return nil
     }
 
     var distanceFromPathM: Float? {
-        switch self {
-        case .waypoint: nil
-        case .snapped(let poi): poi.distanceFromPathM
-        }
+        if case .snapped(let poi) = self { return poi.distanceFromPathM }
+        return nil
     }
 
     var isWaypoint: Bool {
@@ -222,18 +195,6 @@ enum SelectedPoi: Identifiable, Equatable {
     }
 
     static func == (lhs: SelectedPoi, rhs: SelectedPoi) -> Bool {
-        lhs.id == rhs.id
-    }
-}
-
-extension RoutePoi: Equatable {
-    static func == (lhs: RoutePoi, rhs: RoutePoi) -> Bool {
-        lhs.id == rhs.id
-    }
-}
-
-extension SnappedPoi: Equatable {
-    static func == (lhs: SnappedPoi, rhs: SnappedPoi) -> Bool {
         lhs.id == rhs.id
     }
 }

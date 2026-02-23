@@ -75,47 +75,43 @@ struct RouteCardView: View {
                 metricGauge(label: "Unique", value: max(0, 1.0 - v))
             }
             if let v = m.poiDensityPerKm {
-                // Normalize: 2+ POIs/km → 1.0
                 metricGauge(label: "Density", value: min(1.0, v / 2.0))
             }
         }
     }
 
     private func metricGauge(label: String, value: Float) -> some View {
-        VStack(spacing: 2) {
+        let clamped = CGFloat(min(1, max(0, value)))
+        return VStack(spacing: 2) {
             Text(label)
                 .font(.system(size: 9))
                 .foregroundStyle(.secondary)
-            GeometryReader { _ in
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.secondary.opacity(0.2))
-                    .frame(width: 20, height: 4)
-                    .overlay(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(gaugeColor(value))
-                            .frame(width: 20 * CGFloat(min(1, max(0, value))), height: 4)
-                    }
-            }
-            .frame(width: 20, height: 4)
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color.secondary.opacity(0.2))
+                .frame(width: 20, height: 4)
+                .overlay(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(gaugeColor(value))
+                        .frame(width: 20 * clamped, height: 4)
+                }
         }
     }
 
     private func gaugeColor(_ value: Float) -> Color {
-        if value >= 0.7 { return .green }
-        if value >= 0.4 { return .orange }
-        return .red
+        switch value {
+        case 0.7...: .green
+        case 0.4...: .orange
+        default: .red
+        }
     }
 
     // MARK: - Category chips
 
     private var categoryChips: some View {
-        let allPois: [(String, String)] = route.pois.map { ($0.category, $0.category) }
-            + route.snappedPois.map { ($0.category, $0.category) }
-        let uniqueCategories = Array(
-            Dictionary(grouping: allPois, by: \.0).keys.sorted()
-        )
+        let allCategories = route.pois.map(\.category) + route.snappedPois.map(\.category)
+        let uniqueCategories = Set(allCategories).sorted()
         let maxShown = 5
-        let shown = Array(uniqueCategories.prefix(maxShown))
+        let shown = uniqueCategories.prefix(maxShown)
         let overflow = uniqueCategories.count - maxShown
 
         return ScrollView(.horizontal, showsIndicators: false) {
@@ -146,8 +142,10 @@ struct RouteCardView: View {
     }
 
     private var scoreColor: Color {
-        if route.score >= 7 { return .green }
-        if route.score >= 4 { return .orange }
-        return .red
+        switch route.score {
+        case 7...: .green
+        case 4...: .orange
+        default: .red
+        }
     }
 }
