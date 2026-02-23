@@ -8,7 +8,12 @@ static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 static HANDLE: Mutex<Option<ServerHandle>> = Mutex::new(None);
 
 fn get_runtime() -> &'static Runtime {
-    RUNTIME.get_or_init(|| Runtime::new().expect("Failed to create Tokio runtime"))
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .build()
+            .expect("Failed to create Tokio runtime")
+    })
 }
 
 /// # Safety
