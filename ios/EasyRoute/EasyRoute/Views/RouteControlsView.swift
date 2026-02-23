@@ -5,22 +5,27 @@ struct RouteControlsView: View {
     var routeState: RouteState
     var locationManager: LocationManager
     var apiClient: APIClient?
+    var selectedDetent: PresentationDetent
     var onRoutesGenerated: () -> Void
 
     @State private var showCategoryPicker = false
     @State private var gpxShareURL: URL?
     @State private var showShareSheet = false
 
+    private var isCollapsed: Bool { selectedDetent == .height(120) }
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                remainingControls
-                generateButton
-                errorBanner
-                routeCardsSection
+            if !isCollapsed {
+                VStack(spacing: 16) {
+                    remainingControls
+                    expandedGenerateButton
+                    errorBanner
+                    routeCardsSection
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 20)
             }
-            .padding(.horizontal)
-            .padding(.bottom, 20)
         }
         .safeAreaInset(edge: .top) {
             pinnedHeader
@@ -32,16 +37,15 @@ struct RouteControlsView: View {
         }
     }
 
-    // MARK: - Pinned Header (visible at collapsed detent)
+    // MARK: - Pinned Header
 
     private var pinnedHeader: some View {
         VStack(spacing: 8) {
             Capsule()
                 .fill(.quaternary)
                 .frame(width: 36, height: 5)
-                .padding(.top, 8)
+                .padding(.top, 14)
 
-            // Distance slider with inline coordinates
             VStack(spacing: 4) {
                 HStack {
                     Text("Distance")
@@ -61,22 +65,8 @@ struct RouteControlsView: View {
                     set: { routeState.distanceKm = $0 }
                 ), in: 1...20, step: 0.5)
             }
-            .padding(.horizontal)
-            .padding(.bottom, 8)
-        }
-        .background(.regularMaterial)
-    }
 
-    // MARK: - Remaining Controls (in scroll area)
-
-    @ViewBuilder
-    private var remainingControls: some View {
-        VStack(spacing: 14) {
-            // Mode toggle
-            HStack {
-                Text("Mode")
-                    .font(.subheadline.weight(.medium))
-                Spacer()
+            HStack(spacing: 12) {
                 Picker("Mode", selection: Binding(
                     get: { routeState.mode },
                     set: { routeState.mode = $0 }
@@ -88,37 +78,61 @@ struct RouteControlsView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 160)
-            }
-
-            // Category button
-            HStack {
-                Button {
-                    showCategoryPicker = true
-                } label: {
-                    HStack {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                        Text(categoryLabel)
-                    }
-                    .font(.subheadline)
-                }
-                .buttonStyle(.bordered)
-                .sheet(isPresented: $showCategoryPicker) {
-                    CategoryPickerView(selectedCategories: Binding(
-                        get: { routeState.selectedCategories },
-                        set: { routeState.selectedCategories = $0 }
-                    ))
-                    .presentationDetents([.medium, .large])
-                }
 
                 Spacer()
+
+                Button {
+                    Task { await generateRoutes() }
+                } label: {
+                    Group {
+                        if routeState.isLoading {
+                            ProgressView()
+                                .tint(.white)
+                                .controlSize(.small)
+                        } else {
+                            Label("Go", systemImage: "arrow.trianglehead.counterclockwise.rotate.90")
+                        }
+                    }
+                    .fontWeight(.semibold)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(routeState.isLoading || routeState.mapCenter == nil || apiClient == nil)
             }
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 8)
+    }
+
+    // MARK: - Remaining Controls
+
+    private var remainingControls: some View {
+        HStack {
+            Button {
+                showCategoryPicker = true
+            } label: {
+                HStack {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                    Text(categoryLabel)
+                }
+                .font(.subheadline)
+            }
+            .buttonStyle(.bordered)
+            .sheet(isPresented: $showCategoryPicker) {
+                CategoryPickerView(selectedCategories: Binding(
+                    get: { routeState.selectedCategories },
+                    set: { routeState.selectedCategories = $0 }
+                ))
+                .presentationDetents([.medium, .large])
+            }
+
+            Spacer()
         }
     }
 
-    // MARK: - Generate Button
+    // MARK: - Expanded Generate Button
 
     @ViewBuilder
-    private var generateButton: some View {
+    private var expandedGenerateButton: some View {
         Button {
             Task { await generateRoutes() }
         } label: {
@@ -127,7 +141,7 @@ struct RouteControlsView: View {
                     ProgressView()
                         .tint(.white)
                 } else {
-                    Image(systemName: "point.topright.arrow.triangle.backward.to.point.bottomleft.scurvepath")
+                    Image(systemName: "arrow.trianglehead.counterclockwise.rotate.90")
                 }
                 Text(routeState.isLoading ? "Generating..." : "Generate Route")
                     .fontWeight(.semibold)
@@ -216,16 +230,16 @@ struct RouteControlsView: View {
         routeState.isLoading = true
         routeState.error = nil
 
-        var prefs: RoutePreferences?
-        if !routeState.selectedCategories.isEmpty {
-            prefs = RoutePreferences(poiCategories: Array(routeState.selectedCategories))
-        }
+        let categories = routeState.selectedCategories
+        let preferences = categories.isEmpty
+            ? nil
+            : RoutePreferences(poiCategories: Array(categories))
 
         let request = LoopRouteRequest(
             startPoint: Coordinates(from: start),
             distanceKm: routeState.distanceKm,
             mode: routeState.mode,
-            preferences: prefs
+            preferences: preferences
         )
 
         do {
@@ -248,15 +262,11 @@ struct RouteControlsView: View {
     }
 
     private var categoryLabel: String {
-        if routeState.selectedCategories.isEmpty {
-            return "All categories"
-        }
-        let count = routeState.selectedCategories.count
-        if count <= 2 {
-            return routeState.selectedCategories
-                .compactMap { POICategories.allCategories[$0]?.label }
-                .joined(separator: ", ")
-        }
-        return "\(count) categories"
+        let selected = routeState.selectedCategories
+        if selected.isEmpty { return "All categories" }
+        if selected.count > 2 { return "\(selected.count) categories" }
+        return selected
+            .compactMap { POICategories.allCategories[$0]?.label }
+            .joined(separator: ", ")
     }
 }
