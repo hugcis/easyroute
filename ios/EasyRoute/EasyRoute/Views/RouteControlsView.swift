@@ -12,14 +12,14 @@ struct RouteControlsView: View {
     @State private var gpxShareURL: URL?
     @State private var showShareSheet = false
 
-    private var isCollapsed: Bool { selectedDetent == .height(120) }
+    private var isCollapsed: Bool { selectedDetent == .height(192) }
 
     var body: some View {
         ScrollView {
             if !isCollapsed {
                 VStack(spacing: 16) {
-                    remainingControls
                     expandedGenerateButton
+                    emptyPrompt
                     errorBanner
                     routeCardsSection
                 }
@@ -40,33 +40,37 @@ struct RouteControlsView: View {
     // MARK: - Pinned Header
 
     private var pinnedHeader: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             Capsule()
                 .fill(.quaternary)
                 .frame(width: 36, height: 5)
                 .padding(.top, 14)
 
-            VStack(spacing: 4) {
-                HStack {
-                    Text("Distance")
-                        .font(.subheadline.weight(.medium))
-                    Spacer()
-                    if let center = routeState.mapCenter {
-                        Text(String(format: "%.4f, %.4f", center.latitude, center.longitude))
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.tertiary)
-                    }
-                    Text(String(format: "%.1f km", routeState.distanceKm))
-                        .font(.subheadline.monospacedDigit().weight(.medium))
+            HStack {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(String(format: "%.1f", routeState.distanceKm))
+                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                        .contentTransition(.numericText(value: routeState.distanceKm))
+                        .animation(.snappy, value: routeState.distanceKm)
+                    Text("km")
+                        .font(.callout.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
-                Slider(value: Binding(
-                    get: { routeState.distanceKm },
-                    set: { routeState.distanceKm = $0 }
-                ), in: 1...20, step: 0.5)
+
+                Spacer()
+
+                goButton
+                    .opacity(isCollapsed ? 1 : 0)
+                    .scaleEffect(isCollapsed ? 1 : 0.5)
+                    .animation(.snappy(duration: 0.25), value: isCollapsed)
             }
 
-            HStack(spacing: 12) {
+            Slider(value: Binding(
+                get: { routeState.distanceKm },
+                set: { routeState.distanceKm = $0 }
+            ), in: 1...20, step: 0.5)
+
+            HStack {
                 Picker("Mode", selection: Binding(
                     get: { routeState.mode },
                     set: { routeState.mode = $0 }
@@ -77,61 +81,73 @@ struct RouteControlsView: View {
                         .tag(TransportMode.bike)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 160)
+                .fixedSize()
 
                 Spacer()
 
-                Button {
-                    Task { await generateRoutes() }
-                } label: {
-                    Group {
-                        if routeState.isLoading {
-                            ProgressView()
-                                .tint(.white)
-                                .controlSize(.small)
-                        } else {
-                            Label("Go", systemImage: "arrow.trianglehead.counterclockwise.rotate.90")
-                        }
-                    }
-                    .fontWeight(.semibold)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(routeState.isLoading || routeState.mapCenter == nil || apiClient == nil)
+                categoryFilterButton
+            }
+
+            if isCollapsed && !routeState.routes.isEmpty {
+                CompactRouteSwitcherView(routeState: routeState)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .padding(.horizontal)
         .padding(.bottom, 8)
+        .animation(.snappy(duration: 0.25), value: isCollapsed)
+        .animation(.snappy(duration: 0.25), value: routeState.routes.isEmpty)
     }
 
-    // MARK: - Remaining Controls
+    // MARK: - Go Button
 
-    private var remainingControls: some View {
-        HStack {
-            Button {
-                showCategoryPicker = true
-            } label: {
-                HStack {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                    Text(categoryLabel)
+    private var goButton: some View {
+        Button {
+            Task { await generateRoutes() }
+        } label: {
+            Group {
+                if routeState.isLoading {
+                    ProgressView()
+                        .tint(.white)
+                        .controlSize(.small)
+                } else {
+                    Label("Go", systemImage: "arrow.trianglehead.counterclockwise.rotate.90")
+                        .fontWeight(.semibold)
                 }
-                .font(.subheadline)
             }
-            .buttonStyle(.bordered)
-            .sheet(isPresented: $showCategoryPicker) {
-                CategoryPickerView(selectedCategories: Binding(
-                    get: { routeState.selectedCategories },
-                    set: { routeState.selectedCategories = $0 }
-                ))
-                .presentationDetents([.medium, .large])
-            }
+            .frame(height: 20)
+        }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.capsule)
+        .disabled(routeState.isLoading || routeState.mapCenter == nil || apiClient == nil)
+    }
 
-            Spacer()
+    // MARK: - Category Filter Button
+
+    private var categoryFilterButton: some View {
+        Button {
+            showCategoryPicker = true
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                Text(categoryLabel)
+            }
+            .font(.subheadline)
+            .lineLimit(1)
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .sheet(isPresented: $showCategoryPicker) {
+            CategoryPickerView(selectedCategories: Binding(
+                get: { routeState.selectedCategories },
+                set: { routeState.selectedCategories = $0 }
+            ))
+            .presentationDetents([.medium, .large])
         }
     }
 
     // MARK: - Expanded Generate Button
 
-    @ViewBuilder
     private var expandedGenerateButton: some View {
         Button {
             Task { await generateRoutes() }
@@ -150,13 +166,29 @@ struct RouteControlsView: View {
             .padding(.vertical, 12)
         }
         .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.capsule)
         .disabled(routeState.isLoading || routeState.mapCenter == nil || apiClient == nil)
+    }
 
-        if routeState.mapCenter == nil {
-            Text("Move the map to position the pin on your start point")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+    // MARK: - Empty Prompt
+
+    @ViewBuilder
+    private var emptyPrompt: some View {
+        if routeState.routes.isEmpty && routeState.error == nil && !routeState.isLoading {
+            VStack(spacing: 8) {
+                Image(systemName: routeState.mapCenter == nil
+                    ? "mappin.and.ellipse"
+                    : "point.topleft.down.to.point.bottomright.curvepath")
+                    .font(.title2)
+                    .foregroundStyle(.tertiary)
+                Text(routeState.mapCenter == nil
+                    ? "Move the map to set your start point"
+                    : "Tap Go to discover routes")
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
         }
     }
 
@@ -165,23 +197,23 @@ struct RouteControlsView: View {
     @ViewBuilder
     private var errorBanner: some View {
         if let error = routeState.error {
-            HStack {
+            HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(.orange)
                 Text(error)
-                    .font(.caption)
+                    .font(.subheadline)
                 Spacer()
                 Button {
-                    routeState.error = nil
+                    withAnimation { routeState.error = nil }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.tertiary)
                 }
             }
-            .padding(10)
+            .padding(12)
             .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(.red.opacity(0.1))
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(.orange.opacity(0.08))
             )
         }
     }
@@ -191,8 +223,8 @@ struct RouteControlsView: View {
     @ViewBuilder
     private var routeCardsSection: some View {
         if !routeState.routes.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("\(routeState.routes.count) routes generated")
+            VStack(alignment: .leading, spacing: 10) {
+                Text("\(routeState.routes.count) routes")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
 
@@ -206,11 +238,13 @@ struct RouteControlsView: View {
                                 onExportGPX: { exportGPX(route: route) }
                             )
                             .onTapGesture {
-                                withAnimation {
+                                withAnimation(.snappy) {
                                     routeState.selectedRouteIndex = index
                                     onRoutesGenerated()
                                 }
                             }
+                            .transition(.offset(y: 20).combined(with: .opacity))
+                            .animation(.snappy.delay(0.05 * Double(index)), value: isCollapsed)
                         }
                     }
                     .scrollTargetLayout()

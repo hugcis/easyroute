@@ -106,7 +106,7 @@ struct RouteMapView: View {
 
     private func drawerHeight(for detent: PresentationDetent, viewHeight: CGFloat) -> CGFloat {
         switch detent {
-        case .height(120): 120
+        case .height(192): 192
         case .medium: viewHeight * 0.47
         case .large: viewHeight * 0.88
         default: 0

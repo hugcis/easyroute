@@ -47,12 +47,20 @@ struct ContentView: View {
                 onRoutesGenerated: fitCameraToRoute
             )
             .presentationDetents(
-                [.height(120), .medium, .large],
+                [.height(192), .medium, .large],
                 selection: $selectedDetent
             )
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
             .presentationDragIndicator(.hidden)
             .interactiveDismissDisabled()
+        }
+        .onChange(of: routeState.selectedRouteIndex) { _, _ in
+            guard let route = routeState.selectedRoute,
+                  selectedDetent == .height(192)
+            else { return }
+            withAnimation(.easeInOut(duration: 0.5)) {
+                cameraPosition = RouteMapView.cameraFitting(route: route)
+            }
         }
     }
 
@@ -63,6 +71,6 @@ struct ContentView: View {
         withAnimation(.easeInOut(duration: 0.5)) {
             cameraPosition = RouteMapView.cameraFitting(route: route)
         }
-        selectedDetent = .height(120)
+        selectedDetent = .height(192)
     }
 }
