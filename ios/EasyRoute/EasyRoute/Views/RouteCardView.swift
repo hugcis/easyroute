@@ -7,24 +7,19 @@ struct RouteCardView: View {
     let onExportGPX: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Route \(index + 1)")
                     .font(.headline)
                 Spacer()
-                Text(String(format: "%.1f/10", route.score))
-                    .font(.subheadline.bold())
-                    .foregroundStyle(scoreColor)
+                scoreBadge
             }
 
-            HStack(spacing: 12) {
-                Label(String(format: "%.1f km", route.distanceKm), systemImage: "arrow.triangle.swap")
-                    .font(.subheadline)
-                Label("\(route.estimatedDurationMinutes) min", systemImage: "clock")
-                    .font(.subheadline)
+            HStack(spacing: 14) {
+                statItem(icon: "arrow.triangle.swap", value: String(format: "%.1f km", route.distanceKm))
+                statItem(icon: "clock", value: "\(route.estimatedDurationMinutes) min")
                 if let gain = route.elevationGainM, gain > 0 {
-                    Label(String(format: "%.0f m", gain), systemImage: "arrow.up.right")
-                        .font(.subheadline)
+                    statItem(icon: "arrow.up.right", value: String(format: "%.0fm", gain))
                 }
             }
             .foregroundStyle(.secondary)
@@ -35,65 +30,99 @@ struct RouteCardView: View {
 
             categoryChips
 
-            HStack(spacing: 12) {
-                Label("\(route.pois.count) waypoints", systemImage: "mappin.and.ellipse")
-                    .font(.caption)
+            HStack(spacing: 10) {
+                Label("\(route.pois.count) stops", systemImage: "mappin.and.ellipse")
                 if !route.snappedPois.isEmpty {
                     Label("\(route.snappedPois.count) nearby", systemImage: "mappin")
-                        .font(.caption)
                 }
                 Spacer()
                 Button(action: onExportGPX) {
-                    Label("GPX", systemImage: "square.and.arrow.up")
+                    Image(systemName: "square.and.arrow.up")
                         .font(.caption.bold())
                 }
                 .buttonStyle(.bordered)
+                .buttonBorderShape(.circle)
                 .controlSize(.mini)
             }
+            .font(.caption)
             .foregroundStyle(.secondary)
         }
         .padding()
-        .frame(width: 260)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
+        .frame(width: 270)
+        .background {
+            RoundedRectangle(cornerRadius: 14)
                 .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(isSelected ? Color.accentColor : .clear, lineWidth: 2)
-                )
-        )
+                .shadow(color: .black.opacity(isSelected ? 0.1 : 0.05), radius: isSelected ? 8 : 4, y: 2)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 2.5)
+                }
+        }
+        .scaleEffect(isSelected ? 1.0 : 0.97)
+        .animation(.snappy(duration: 0.25), value: isSelected)
     }
 
-    // MARK: - Metrics row
+    // MARK: - Score Badge
 
-    private func metricsRow(_ m: RouteMetrics) -> some View {
-        HStack(spacing: 10) {
-            if let v = m.circularity {
-                metricGauge(label: "Loop", value: v)
-            }
-            if let v = m.pathOverlapPct {
-                metricGauge(label: "Unique", value: max(0, 1.0 - v))
-            }
-            if let v = m.poiDensityPerKm {
-                metricGauge(label: "Density", value: min(1.0, v / 2.0))
-            }
+    private var scoreBadge: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 2) {
+            Text(String(format: "%.1f", route.score))
+                .font(.subheadline.bold().monospacedDigit())
+            Text("/10")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(route.scoreColor.opacity(0.12), in: Capsule())
+        .foregroundStyle(route.scoreColor)
+    }
+
+    // MARK: - Stats
+
+    private func statItem(icon: String, value: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.caption2)
+            Text(value)
+                .font(.caption.monospacedDigit())
         }
     }
 
-    private func metricGauge(label: String, value: Float) -> some View {
-        let clamped = CGFloat(min(1, max(0, value)))
-        return VStack(spacing: 2) {
+    // MARK: - Metrics
+
+    private func metricsRow(_ m: RouteMetrics) -> some View {
+        HStack(spacing: 14) {
+            if let v = m.circularity {
+                miniRing(value: v, label: "Loop")
+            }
+            if let v = m.pathOverlapPct {
+                miniRing(value: max(0, 1.0 - v), label: "Unique")
+            }
+            if let v = m.poiDensityPerKm {
+                miniRing(value: min(1.0, v / 2.0), label: "Density")
+            }
+            Spacer()
+        }
+    }
+
+    private func miniRing(value: Float, label: String) -> some View {
+        let clamped = CGFloat(min(1, max(0.01, value)))
+        let color = gaugeColor(value)
+        return VStack(spacing: 3) {
+            ZStack {
+                Circle()
+                    .stroke(color.opacity(0.15), lineWidth: 3)
+                Circle()
+                    .trim(from: 0, to: clamped)
+                    .stroke(color, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+            .frame(width: 26, height: 26)
+
             Text(label)
                 .font(.system(size: 9))
                 .foregroundStyle(.secondary)
-            RoundedRectangle(cornerRadius: 2)
-                .fill(Color.secondary.opacity(0.2))
-                .frame(width: 20, height: 4)
-                .overlay(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(gaugeColor(value))
-                        .frame(width: 20 * clamped, height: 4)
-                }
         }
     }
 
@@ -105,7 +134,7 @@ struct RouteCardView: View {
         }
     }
 
-    // MARK: - Category chips
+    // MARK: - Category Chips
 
     private var categoryChips: some View {
         let allCategories = route.pois.map(\.category) + route.snappedPois.map(\.category)
@@ -126,7 +155,7 @@ struct RouteCardView: View {
                     }
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Capsule().fill(info.color.opacity(0.15)))
+                    .background(Capsule().fill(info.color.opacity(0.12)))
                     .foregroundStyle(info.color)
                 }
                 if overflow > 0 {
@@ -141,8 +170,13 @@ struct RouteCardView: View {
         }
     }
 
-    private var scoreColor: Color {
-        switch route.score {
+}
+
+// MARK: - Route Score Color
+
+extension Route {
+    var scoreColor: Color {
+        switch score {
         case 7...: .green
         case 4...: .orange
         default: .red
