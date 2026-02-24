@@ -7,6 +7,7 @@ mod tolerance_strategy;
 mod waypoint_selection;
 
 use crate::config::RouteGeneratorConfig;
+use crate::constants::*;
 use crate::error::Result;
 use crate::models::{Coordinates, Poi, Route, RoutePreferences, TransportMode};
 use crate::services::mapbox::MapboxClient;
@@ -105,6 +106,68 @@ impl RouteGenerator {
         route
     }
 
+    /// Select candidates using distance-stratified rings for long routes.
+    ///
+    /// Pure quality-based selection starves long routes in dense areas because the
+    /// closest-first DB limit fills the pool with nearby POIs. This divides the area
+    /// into concentric distance rings and picks top-quality POIs from each ring,
+    /// ensuring every distance band is represented in the candidate pool.
+    fn select_stratified_candidates(
+        pois: Vec<Poi>,
+        start: &Coordinates,
+        target_distance_km: f64,
+        hidden_gems: bool,
+        candidate_limit: usize,
+    ) -> Vec<Poi> {
+        let max_ring_distance = target_distance_km * STRATIFIED_MAX_RING_DISTANCE_FACTOR;
+        let ring_count = STRATIFIED_RING_COUNT;
+        let ring_width = max_ring_distance / ring_count as f64;
+        let slots_per_ring = candidate_limit / (ring_count + 1); // +1 for overflow bucket
+
+        // Bucket POIs into distance rings
+        let mut rings: Vec<Vec<(f32, Poi)>> = (0..ring_count).map(|_| Vec::new()).collect();
+
+        for poi in pois {
+            let dist = start.distance_to(&poi.coordinates);
+            let ring_idx = ((dist / ring_width) as usize).min(ring_count - 1);
+            let score = poi.quality_score(hidden_gems);
+            rings[ring_idx].push((score, poi));
+        }
+
+        // Sort each ring by quality descending and take slots_per_ring
+        let mut candidates = Vec::with_capacity(candidate_limit);
+        let mut overflow = Vec::new();
+
+        for ring in &mut rings {
+            ring.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+            let (taken, rest) = if ring.len() > slots_per_ring {
+                ring.split_at(slots_per_ring)
+            } else {
+                (ring.as_slice(), &[][..])
+            };
+            candidates.extend(taken.iter().map(|(_, poi)| poi.clone()));
+            overflow.extend(rest.iter().map(|(score, poi)| (*score, poi.clone())));
+        }
+
+        // Fill remaining slots from global quality overflow
+        let remaining = candidate_limit.saturating_sub(candidates.len());
+        if remaining > 0 {
+            overflow.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+            candidates.extend(overflow.into_iter().take(remaining).map(|(_, poi)| poi));
+        }
+
+        tracing::debug!(
+            ring_count = ring_count,
+            slots_per_ring = slots_per_ring,
+            ring_width_km = %format!("{:.2}", ring_width),
+            total_candidates = candidates.len(),
+            "Stratified candidate selection: {} rings × ~{} slots, ring width {:.2}km",
+            ring_count, slots_per_ring, ring_width
+        );
+
+        candidates
+    }
+
     /// Discover POIs within the search radius and score/filter them to candidate set.
     /// Returns `None` if no POIs found at all (caller should use geometric fallback).
     async fn discover_and_filter_pois(
@@ -114,7 +177,16 @@ impl RouteGenerator {
         preferences: &RoutePreferences,
     ) -> Result<Option<Vec<Poi>>> {
         let search_radius_km = target_distance_km * self.config.poi_search_radius_multiplier;
-        let poi_limit = (target_distance_km * 20.0).clamp(50.0, 500.0) as usize;
+        let poi_limit = if target_distance_km > self.config.long_route_threshold_km {
+            // In dense areas, closest-first sorting means a small limit misses distant POIs.
+            // Scale with area (πr²) so POIs at the required waypoint distances survive the limit.
+            let target_wp_dist = target_distance_km * POI_LIMIT_LONG_ROUTE_WP_DIST_FACTOR;
+            (std::f64::consts::PI * target_wp_dist * target_wp_dist * POI_LIMIT_LONG_ROUTE_DENSITY)
+                .clamp(POI_LIMIT_LONG_ROUTE_MIN, POI_LIMIT_LONG_ROUTE_MAX) as usize
+        } else {
+            (target_distance_km * POI_LIMIT_SHORT_ROUTE_FACTOR)
+                .clamp(POI_LIMIT_SHORT_ROUTE_MIN, POI_LIMIT_SHORT_ROUTE_MAX) as usize
+        };
 
         let raw_pois = self
             .poi_service
@@ -137,16 +209,28 @@ impl RouteGenerator {
             return Ok(None);
         }
 
-        let max_candidates = if target_distance_km > 12.0 {
-            300.0
+        let max_candidates = if target_distance_km > self.config.long_route_threshold_km {
+            CANDIDATE_LIMIT_LONG
+        } else if target_distance_km > CANDIDATE_MEDIUM_THRESHOLD_KM {
+            CANDIDATE_LIMIT_MEDIUM
         } else {
-            100.0
+            CANDIDATE_LIMIT_SHORT
         };
-        let candidate_limit = (target_distance_km * 10.0).clamp(20.0, max_candidates) as usize;
+        let candidate_limit = (target_distance_km * CANDIDATE_LIMIT_FACTOR)
+            .clamp(CANDIDATE_LIMIT_MIN, max_candidates) as usize;
         let raw_count = raw_pois.len();
-        let candidate_pois =
+        let candidate_pois = if target_distance_km > self.config.long_route_threshold_km {
+            Self::select_stratified_candidates(
+                raw_pois,
+                start,
+                target_distance_km,
+                preferences.hidden_gems,
+                candidate_limit,
+            )
+        } else {
             self.poi_service
-                .select_top_pois(raw_pois, preferences.hidden_gems, candidate_limit);
+                .select_top_pois(raw_pois, preferences.hidden_gems, candidate_limit)
+        };
 
         tracing::info!(
             raw_pois = raw_count,
