@@ -28,6 +28,7 @@
 xcuserdata/
 *.xcworkspace
 DerivedData/
+Local.xcconfig
 
 # Claude Code
 .claude/

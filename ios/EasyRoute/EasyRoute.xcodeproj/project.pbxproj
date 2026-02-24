@@ -41,6 +41,7 @@
 		9AD01D6D2F41282C00033AAB /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = System/Library/Frameworks/SystemConfiguration.framework; sourceTree = SDKROOT; };
 		9AD01D6F2F41283500033AAB /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		9AD01D712F41285200033AAB /* region.db */ = {isa = PBXFileReference; lastKnownFileType = file; path = region.db; sourceTree = "<group>"; };
+		9AD01D742F41290100033AAB /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -106,6 +107,7 @@
 		9A06160B2F4125CC002FE530 = {
 			isa = PBXGroup;
 			children = (
+				9AD01D742F41290100033AAB /* Config.xcconfig */,
 				9A0616162F4125CC002FE530 /* EasyRoute */,
 				9A0616242F4125CD002FE530 /* EasyRouteTests */,
 				9A06162E2F4125CD002FE530 /* EasyRouteUITests */,
@@ -442,6 +444,7 @@
 		};
 		9A0616362F4125CD002FE530 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9AD01D742F41290100033AAB /* Config.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -467,9 +470,6 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/../../target/aarch64-apple-ios-sim/release",
 				);
-				MAPBOX_API_KEY = MAPBOX_TOKEN_PLACEHOLDER;
-				MAPBOX_BASE_URL = "";
-				MAPBOX_GL_TOKEN = MAPBOX_TOKEN_PLACEHOLDER;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = hcis.EasyRoute;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -485,6 +485,7 @@
 		};
 		9A0616372F4125CD002FE530 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9AD01D742F41290100033AAB /* Config.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -510,9 +511,6 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/../../target/aarch64-apple-ios-sim/release",
 				);
-				MAPBOX_API_KEY = MAPBOX_TOKEN_PLACEHOLDER;
-				MAPBOX_BASE_URL = "";
-				MAPBOX_GL_TOKEN = MAPBOX_TOKEN_PLACEHOLDER;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = hcis.EasyRoute;
 				PRODUCT_NAME = "$(TARGET_NAME)";

@@ -1,0 +1,6 @@
+// Local.xcconfig — Local secrets (DO NOT COMMIT)
+// Copy this file to Local.xcconfig and fill in your real tokens.
+
+MAPBOX_API_KEY = your_mapbox_token_here
+MAPBOX_GL_TOKEN = your_mapbox_token_here
+// MAPBOX_BASE_URL =
