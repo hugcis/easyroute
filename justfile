@@ -97,7 +97,7 @@ check-sqlite:
 # Start the Mapbox proxy server
 [group('dev')]
 proxy: _ensure-env
-    cargo run --bin proxy
+    cargo run --features proxy --bin proxy
 
 # Run the on-device server (SQLite + web UI)
 [group('dev')]

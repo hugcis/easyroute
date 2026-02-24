@@ -1,18 +1,23 @@
 use axum::{
+    body::Body,
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Json},
     routing::{get, post},
     Router,
 };
 use reqwest::Client;
+use rusqlite::OpenFlags;
+use serde::Serialize;
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
+    path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
+use tokio_util::io::ReaderStream;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -27,6 +32,7 @@ struct ProxyConfig {
     api_keys: Vec<String>,
     rate_limit: usize,
     port: u16,
+    regions_dir: PathBuf,
 }
 
 impl ProxyConfig {
@@ -54,11 +60,16 @@ impl ProxyConfig {
             .parse()
             .map_err(|_| "Invalid PROXY_PORT")?;
 
+        let regions_dir: PathBuf = std::env::var("PROXY_REGIONS_DIR")
+            .unwrap_or_else(|_| "./regions".to_string())
+            .into();
+
         Ok(Self {
             mapbox_api_key,
             api_keys,
             rate_limit,
             port,
+            regions_dir,
         })
     }
 }
@@ -86,12 +97,93 @@ impl RateLimiter {
     }
 }
 
+// ── Region catalog ─────────────────────────────────────
+
+#[derive(Clone, Serialize)]
+struct RegionInfo {
+    id: String,
+    name: String,
+    size_bytes: u64,
+    poi_count: u64,
+    build_date: String,
+}
+
+fn scan_regions(dir: &std::path::Path) -> Vec<RegionInfo> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!(path = %dir.display(), error = %e, "Cannot read regions directory");
+            return Vec::new();
+        }
+    };
+
+    let mut regions = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("db") {
+            continue;
+        }
+
+        let id = match path.file_stem().and_then(|s| s.to_str()) {
+            Some(s) => s.to_string(),
+            None => continue,
+        };
+
+        let size_bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+
+        let conn = match rusqlite::Connection::open_with_flags(
+            &path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        ) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(file = %path.display(), error = %e, "Cannot open region DB");
+                continue;
+            }
+        };
+
+        let mut meta = HashMap::new();
+        if let Ok(mut stmt) = conn.prepare("SELECT key, value FROM region_meta") {
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .into_iter()
+                .flatten();
+            for row in rows.flatten() {
+                meta.insert(row.0, row.1);
+            }
+        }
+
+        regions.push(RegionInfo {
+            id,
+            name: meta
+                .get("region_name")
+                .cloned()
+                .unwrap_or_else(|| "Unknown".to_string()),
+            size_bytes,
+            poi_count: meta
+                .get("poi_count")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
+            build_date: meta
+                .get("build_date")
+                .cloned()
+                .unwrap_or_else(|| "Unknown".to_string()),
+        });
+    }
+
+    regions.sort_by(|a, b| a.id.cmp(&b.id));
+    regions
+}
+
 // ── App state ───────────────────────────────────────────
 
 struct AppState {
     config: ProxyConfig,
     http: Client,
     limiter: Mutex<RateLimiter>,
+    regions: Vec<RegionInfo>,
 }
 
 // ── Auth helpers ────────────────────────────────────────
@@ -213,6 +305,105 @@ async fn telemetry(
     (StatusCode::OK, Json(json!({"status": "ok"})))
 }
 
+async fn list_regions(State(state): State<Arc<AppState>>, headers: HeaderMap) -> impl IntoResponse {
+    let token = match extract_bearer_token(&headers) {
+        Some(t) => t,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "Missing or invalid Authorization header"})),
+            )
+                .into_response()
+        }
+    };
+
+    if !validate_api_key(token, &state.config.api_keys) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "Invalid API key"})),
+        )
+            .into_response();
+    }
+
+    Json(json!({ "regions": state.regions })).into_response()
+}
+
+async fn download_region(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let token = match extract_bearer_token(&headers) {
+        Some(t) => t,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "Missing or invalid Authorization header"})),
+            )
+                .into_response()
+        }
+    };
+
+    if !validate_api_key(token, &state.config.api_keys) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "Invalid API key"})),
+        )
+            .into_response();
+    }
+
+    // Validate id to prevent path traversal
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Invalid region id"})),
+        )
+            .into_response();
+    }
+
+    // Verify the region exists in our catalog
+    if !state.regions.iter().any(|r| r.id == id) {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "Region not found"})),
+        )
+            .into_response();
+    }
+
+    let path = state.config.regions_dir.join(format!("{}.db", id));
+
+    let file = match tokio::fs::File::open(&path).await {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::error!(path = %path.display(), error = %e, "Cannot open region file");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Cannot read region file"})),
+            )
+                .into_response();
+        }
+    };
+
+    let file_size = file.metadata().await.map(|m| m.len()).unwrap_or(0);
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+
+    let filename = format!("{}.db", id);
+    let headers = [
+        (header::CONTENT_TYPE, "application/octet-stream".to_string()),
+        (header::CONTENT_LENGTH, file_size.to_string()),
+        (
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", filename),
+        ),
+    ];
+
+    (headers, body).into_response()
+}
+
 // ── Main ────────────────────────────────────────────────
 
 #[tokio::main]
@@ -229,10 +420,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = ProxyConfig::from_env().map_err(|e| format!("Config error: {}", e))?;
     let addr = format!("0.0.0.0:{}", config.port);
 
+    let regions = scan_regions(&config.regions_dir);
     tracing::info!(
         port = config.port,
         keys = config.api_keys.len(),
         rate_limit = config.rate_limit,
+        regions = regions.len(),
         "Starting Mapbox proxy"
     );
 
@@ -240,12 +433,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config,
         http: Client::new(),
         limiter: Mutex::new(RateLimiter::default()),
+        regions,
     });
 
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/directions/{profile}/{coordinates}", get(directions))
         .route("/v1/telemetry", post(telemetry))
+        .route("/v1/regions", get(list_regions))
+        .route("/v1/regions/{id}/download", get(download_region))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
@@ -279,6 +475,7 @@ mod tests {
         assert_eq!(cfg.api_keys, vec!["key1", "key2"]);
         assert_eq!(cfg.rate_limit, 30);
         assert_eq!(cfg.port, 5000);
+        assert_eq!(cfg.regions_dir, PathBuf::from("./regions"));
         unsafe {
             std::env::remove_var("PROXY_RATE_LIMIT");
             std::env::remove_var("PROXY_PORT");
@@ -373,5 +570,23 @@ mod tests {
     fn api_key_invalid() {
         let keys = vec!["key1".to_string()];
         assert!(!validate_api_key("wrong", &keys));
+    }
+
+    // --- Region scanning ---
+
+    #[test]
+    fn scan_regions_empty_dir() {
+        let dir = std::env::temp_dir().join("easyroute_test_empty_regions");
+        let _ = std::fs::create_dir_all(&dir);
+        let regions = scan_regions(&dir);
+        assert!(regions.is_empty());
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn scan_regions_missing_dir() {
+        let dir = PathBuf::from("/tmp/easyroute_nonexistent_dir_12345");
+        let regions = scan_regions(&dir);
+        assert!(regions.is_empty());
     }
 }
