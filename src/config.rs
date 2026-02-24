@@ -37,112 +37,188 @@ pub struct Config {
     pub route_generator: RouteGeneratorConfig,
 }
 
+/// Route generation tuning knobs — all overridable via `ROUTE_*` env vars.
+///
+/// These parameters directly affect route quality and are intended to be
+/// experimented with between runs. Structural invariants and algorithm
+/// coefficients that rarely change live in [`constants`](crate::constants).
 #[derive(Debug, Clone)]
 pub struct RouteGeneratorConfig {
-    /// Multiplier for POI search radius relative to target distance
-    /// For a 5km route with multiplier 0.7, searches within 3.5km radius
+    // --- POI Search & Filtering ---
+    /// Multiplier for the POI search radius relative to the target route distance.
+    /// `search_radius = target_distance_km × multiplier`.
+    /// Higher values cast a wider net but include more irrelevant POIs.
+    /// Env: `ROUTE_POI_SEARCH_RADIUS_MULTIPLIER` (default 1.0)
     pub poi_search_radius_multiplier: f64,
 
-    /// Multiplier for target waypoint distance from start
-    /// For loop geometry, POIs should be ~45% of target distance from start
+    /// Ideal waypoint distance from the start point, as a fraction of target distance.
+    /// For a 5 km route with 0.35, the ideal waypoint sits ~1.75 km from start.
+    /// Env: `ROUTE_WAYPOINT_DISTANCE_MULTIPLIER` (default 0.35)
     pub waypoint_distance_multiplier: f64,
 
-    /// Maximum POI distance as multiplier of target distance
-    /// POIs beyond this distance from start are filtered out
+    /// Hard cutoff for POI distance from start, as a multiplier of target distance.
+    /// POIs farther than `target_distance_km × multiplier` are discarded.
+    /// Env: `ROUTE_MAX_POI_DISTANCE_MULTIPLIER` (default 0.6)
     pub max_poi_distance_multiplier: f64,
 
-    /// Minimum distance (km) a POI must be from start point
+    /// Minimum distance (km) a POI must be from the start point to be considered.
+    /// Filters out POIs that are too close to contribute to a meaningful loop.
+    /// Env: `ROUTE_MIN_POI_DISTANCE_KM` (default 0.3)
     pub min_poi_distance_km: f64,
 
-    /// Relaxed tolerance level (as fraction, e.g., 0.3 = ±30%)
+    // --- Adaptive Tolerance Levels ---
+    /// Second-tier (relaxed) distance tolerance, as a fraction of target distance.
+    /// Applied when normal tolerance fails to produce enough routes.
+    /// E.g., 0.3 means the route can be ±30% of the target distance.
+    /// Env: `ROUTE_TOLERANCE_LEVEL_RELAXED` (default 0.3)
     pub tolerance_level_relaxed: f64,
 
-    /// Very relaxed tolerance level (as fraction, e.g., 0.5 = ±50%)
+    /// Third-tier (very relaxed) distance tolerance, as a fraction of target distance.
+    /// Applied when relaxed tolerance still fails.
+    /// Env: `ROUTE_TOLERANCE_LEVEL_VERY_RELAXED` (default 0.5)
     pub tolerance_level_very_relaxed: f64,
 
-    /// Maximum number of retries per route generation attempt
+    /// Maximum Mapbox API calls per single route generation attempt.
+    /// Each retry uses a different waypoint combination or distance correction.
+    /// Env: `ROUTE_MAX_GENERATION_RETRIES` (default 4)
     pub max_route_generation_retries: usize,
 
-    /// Number of waypoints for short routes
+    // --- Waypoint Count by Route Length ---
+    /// Number of waypoints for short routes (below `long_route_threshold_km`
+    /// with few available POIs).
+    /// Env: `ROUTE_WAYPOINTS_COUNT_SHORT` (default 2)
     pub waypoints_count_short: usize,
 
-    /// Number of waypoints for medium routes
+    /// Number of waypoints for medium routes (below threshold, enough POIs).
+    /// Env: `ROUTE_WAYPOINTS_COUNT_MEDIUM` (default 3)
     pub waypoints_count_medium: usize,
 
-    /// Number of waypoints for long routes
+    /// Number of waypoints for long routes (above `long_route_threshold_km`).
+    /// Env: `ROUTE_WAYPOINTS_COUNT_LONG` (default 4)
     pub waypoints_count_long: usize,
 
-    /// Distance threshold (km) above which routes are considered "long"
+    /// Distance threshold (km) above which routes are classified as "long"
+    /// and use `waypoints_count_long` waypoints plus area-based POI discovery.
+    /// Env: `ROUTE_LONG_ROUTE_THRESHOLD_KM` (default 8.0)
     pub long_route_threshold_km: f64,
 
-    /// POI count threshold for using more waypoints
+    /// Minimum available POI count before the selector upgrades from
+    /// `waypoints_count_short` to `waypoints_count_medium`.
+    /// Env: `ROUTE_POI_COUNT_THRESHOLD_LONG` (default 3)
     pub poi_count_threshold_long: usize,
 
-    /// Distance multiplier for 2-waypoint routes
+    // --- Per-Waypoint-Count Distance Multipliers ---
+    // Controls how far waypoints sit from start for each waypoint count.
+    // Fewer waypoints → larger multiplier (waypoints further out to cover distance).
+    /// Waypoint distance multiplier when using 2 waypoints.
+    /// Env: `ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_2WP` (default 0.50)
     pub waypoint_distance_multiplier_2wp: f64,
 
-    /// Distance multiplier for 3-waypoint routes
+    /// Waypoint distance multiplier when using 3 waypoints.
+    /// Env: `ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_3WP` (default 0.35)
     pub waypoint_distance_multiplier_3wp: f64,
 
-    /// Distance multiplier for 4-waypoint routes
+    /// Waypoint distance multiplier when using 4 waypoints.
+    /// Env: `ROUTE_WAYPOINT_DISTANCE_MULTIPLIER_4WP` (default 0.28)
     pub waypoint_distance_multiplier_4wp: f64,
 
-    // --- POI Scoring Strategy Configuration ---
-    /// Strategy for scoring POIs during waypoint selection
+    // --- POI Scoring Strategy ---
+    // Controls how POIs are ranked during waypoint selection.
+    // Weights should sum to ~1.0 for the Advanced strategy.
+    /// Algorithm for scoring POI candidates: `Simple` (distance only) or
+    /// `Advanced` (multi-factor: distance, quality, angular spread, clustering).
+    /// Env: `ROUTE_POI_SCORING_STRATEGY` (default "advanced")
     pub poi_scoring_strategy: ScoringStrategy,
 
-    /// Minimum separation distance (km) between selected POIs to avoid clustering
+    /// Minimum separation (km) between any two selected waypoints.
+    /// Prevents clustered waypoints that produce out-and-back shapes.
+    /// Env: `ROUTE_POI_MIN_SEPARATION_KM` (default 0.3)
     pub poi_min_separation_km: f64,
 
-    /// Scoring weight for distance from ideal waypoint position (0.0-1.0)
+    /// Weight for how close a POI is to the ideal waypoint distance (0.0–1.0).
+    /// Env: `ROUTE_POI_SCORE_WEIGHT_DISTANCE` (default 0.45)
     pub poi_score_weight_distance: f32,
 
-    /// Scoring weight for POI quality/popularity (0.0-1.0)
+    /// Weight for POI quality/popularity score (0.0–1.0).
+    /// Env: `ROUTE_POI_SCORE_WEIGHT_QUALITY` (default 0.15)
     pub poi_score_weight_quality: f32,
 
-    /// Scoring weight for angular diversity around start point (0.0-1.0)
+    /// Weight for angular diversity — how well-spread waypoints are around
+    /// the start point (0.0–1.0). Key factor for loop shape quality.
+    /// Env: `ROUTE_POI_SCORE_WEIGHT_ANGULAR` (default 0.35)
     pub poi_score_weight_angular: f32,
 
-    /// Scoring weight penalty for POI clustering (0.0-1.0)
+    /// Penalty weight for POIs that are too close to already-selected
+    /// waypoints (0.0–1.0). Higher values push waypoints apart.
+    /// Env: `ROUTE_POI_SCORE_WEIGHT_CLUSTERING` (default 0.05)
     pub poi_score_weight_clustering: f32,
 
-    /// Scoring weight for variation randomization (0.0-1.0)
+    /// Weight for pseudo-random variation between attempts (0.0–1.0).
+    /// Ensures each alternative route uses a different waypoint set.
+    /// Env: `ROUTE_POI_SCORE_WEIGHT_VARIATION` (default 0.05)
     pub poi_score_weight_variation: f32,
 
-    /// Distance threshold (meters) for detecting path overlap (streets walked twice)
+    // --- Route Scoring & Metrics ---
+    /// Distance threshold (meters) for detecting path overlap — segments of
+    /// the route that retrace an earlier segment. Lower values are stricter.
+    /// Env: `ROUTE_METRICS_OVERLAP_THRESHOLD_M` (default 25.0)
     pub metrics_overlap_threshold_m: f64,
 
-    /// Scoring version: 1 = original, 2 = shape-aware (includes circularity/convexity/overlap)
+    /// Scoring version: 1 = original (distance + POI count/quality/diversity),
+    /// 2 = shape-aware (adds circularity, convexity, path overlap penalties).
+    /// Env: `ROUTE_SCORING_VERSION` (default 1)
     pub scoring_version: u32,
 
     // --- POI Discovery Limits ---
-    /// Linear scaling factor for short-route POI limit: limit = distance_km × factor
+    // Control how many POIs are fetched from the database before filtering.
+    // Short routes scale linearly with distance; long routes scale with area
+    // to ensure distant POIs aren't crowded out by nearby ones.
+    /// Short-route POI limit scaling: `limit = distance_km × factor`.
+    /// Env: `ROUTE_POI_LIMIT_SHORT_FACTOR` (default 20.0)
     pub poi_limit_short_factor: f64,
-    /// Minimum POI limit for short routes
+    /// Floor for the short-route POI limit.
+    /// Env: `ROUTE_POI_LIMIT_SHORT_MIN` (default 50.0)
     pub poi_limit_short_min: f64,
-    /// Maximum POI limit for short routes
+    /// Ceiling for the short-route POI limit.
+    /// Env: `ROUTE_POI_LIMIT_SHORT_MAX` (default 500.0)
     pub poi_limit_short_max: f64,
-    /// Area-based density factor for long-route POI limit: limit = π × r² × factor
+
+    /// Long-route POI limit density factor: `limit = π × r² × density`.
+    /// `r` is derived from `target_distance × poi_limit_long_wp_dist_factor`.
+    /// Env: `ROUTE_POI_LIMIT_LONG_DENSITY` (default 200.0)
     pub poi_limit_long_density: f64,
-    /// Minimum POI limit for long routes
+    /// Floor for the long-route POI limit.
+    /// Env: `ROUTE_POI_LIMIT_LONG_MIN` (default 1000.0)
     pub poi_limit_long_min: f64,
-    /// Maximum POI limit for long routes
+    /// Ceiling for the long-route POI limit.
+    /// Env: `ROUTE_POI_LIMIT_LONG_MAX` (default 15000.0)
     pub poi_limit_long_max: f64,
-    /// Waypoint distance as fraction of target distance for area calculation
+    /// Fraction of target distance used as the radius in the area-based POI
+    /// limit formula for long routes. E.g., 0.45 for a 10 km route → r = 4.5 km.
+    /// Env: `ROUTE_POI_LIMIT_LONG_WP_DIST_FACTOR` (default 0.45)
     pub poi_limit_long_wp_dist_factor: f64,
 
     // --- Candidate Selection Limits ---
-    /// Linear scaling factor for candidate pool size: candidates = distance_km × factor
+    // After fetching raw POIs, the top candidates are selected by quality score.
+    // The pool size scales with distance and is capped per route-length tier.
+    /// Linear scaling: `candidates = distance_km × factor`, then clamped.
+    /// Env: `ROUTE_CANDIDATE_LIMIT_FACTOR` (default 10.0)
     pub candidate_limit_factor: f64,
-    /// Minimum candidate pool size
+    /// Floor for the candidate pool size.
+    /// Env: `ROUTE_CANDIDATE_LIMIT_MIN` (default 20.0)
     pub candidate_limit_min: f64,
-    /// Candidate pool cap for short routes (≤ candidate_medium_threshold_km)
+    /// Candidate pool cap for short routes (≤ `candidate_medium_threshold_km`).
+    /// Env: `ROUTE_CANDIDATE_LIMIT_SHORT` (default 100.0)
     pub candidate_limit_short: f64,
-    /// Candidate pool cap for medium routes (> candidate_medium_threshold_km, ≤ long_route_threshold_km)
+    /// Candidate pool cap for medium routes (between `candidate_medium_threshold_km`
+    /// and `long_route_threshold_km`).
+    /// Env: `ROUTE_CANDIDATE_LIMIT_MEDIUM` (default 300.0)
     pub candidate_limit_medium: f64,
-    /// Candidate pool cap for long routes (> long_route_threshold_km)
+    /// Candidate pool cap for long routes (above `long_route_threshold_km`).
+    /// Env: `ROUTE_CANDIDATE_LIMIT_LONG` (default 500.0)
     pub candidate_limit_long: f64,
-    /// Distance threshold (km) above which routes use the medium candidate pool cap
+    /// Distance threshold (km) separating "short" and "medium" candidate pool tiers.
+    /// Env: `ROUTE_CANDIDATE_MEDIUM_THRESHOLD_KM` (default 5.0)
     pub candidate_medium_threshold_km: f64,
 }
 
