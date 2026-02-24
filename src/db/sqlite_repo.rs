@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::error::Result;
 use crate::models::{BoundingBox, Coordinates, Poi, PoiCategory};
 
-use super::poi_repository::PoiRepository;
+use super::poi_repository::{PoiRepository, RawPoiRow};
 
 // ---------------------------------------------------------------------------
 // Row type (SQLite-specific)
@@ -25,60 +25,29 @@ struct SqlitePoiRow {
     osm_id: Option<i64>,
 }
 
-impl From<SqlitePoiRow> for Poi {
-    fn from(row: SqlitePoiRow) -> Self {
-        let id = row.id.parse::<Uuid>().unwrap_or_else(|_| {
+impl SqlitePoiRow {
+    fn into_poi(self) -> Poi {
+        let id = self.id.parse::<Uuid>().unwrap_or_else(|_| {
             tracing::warn!(
                 "Invalid UUID '{}' for POI '{}', using nil",
-                row.id,
-                row.name
+                self.id,
+                self.name
             );
             Uuid::nil()
         });
 
-        let category = row.category.parse().unwrap_or_else(|_| {
-            tracing::warn!(
-                "Invalid POI category '{}' for POI '{}' (id: {}), defaulting to Historic",
-                row.category,
-                row.name,
-                row.id
-            );
-            PoiCategory::Historic
-        });
-
-        let coordinates = Coordinates::new(row.lat, row.lng).unwrap_or_else(|e| {
-            tracing::error!(
-                "Invalid coordinates for POI '{}' (id: {}): {}. Using fallback.",
-                row.name,
-                row.id,
-                e
-            );
-            Coordinates { lat: 0.0, lng: 0.0 }
-        });
-
-        let estimated_visit_duration_minutes = row.estimated_visit_duration_minutes.and_then(|d| {
-            if d >= 0 {
-                Some(d as u32)
-            } else {
-                tracing::warn!(
-                    "Negative visit duration {} for POI '{}', ignoring",
-                    d,
-                    row.name
-                );
-                None
-            }
-        });
-
-        Poi {
+        RawPoiRow {
             id,
-            name: row.name,
-            category,
-            coordinates,
-            popularity_score: row.popularity_score as f32,
-            description: row.description,
-            estimated_visit_duration_minutes,
-            osm_id: row.osm_id,
+            name: self.name,
+            category: self.category,
+            lat: self.lat,
+            lng: self.lng,
+            popularity_score: self.popularity_score as f32,
+            description: self.description,
+            estimated_visit_duration_minutes: self.estimated_visit_duration_minutes,
+            osm_id: self.osm_id,
         }
+        .into_poi()
     }
 }
 
@@ -86,13 +55,13 @@ impl From<SqlitePoiRow> for Poi {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn build_category_filter(categories: Option<&[PoiCategory]>) -> Option<HashSet<String>> {
-    categories.map(|cats| cats.iter().map(|c| c.to_string()).collect())
+fn build_category_filter(categories: Option<&[PoiCategory]>) -> Option<HashSet<PoiCategory>> {
+    categories.map(|cats| cats.iter().cloned().collect())
 }
 
-fn matches_category_filter(poi: &Poi, filter: &Option<HashSet<String>>) -> bool {
+fn matches_category_filter(poi: &Poi, filter: &Option<HashSet<PoiCategory>>) -> bool {
     match filter {
-        Some(cats) => cats.contains(&poi.category.to_string()),
+        Some(cats) => cats.contains(&poi.category),
         None => true,
     }
 }
@@ -251,7 +220,7 @@ impl PoiRepository for SqlitePoiRepository {
         // Haversine post-filter + category filter + sort by distance + limit
         let mut results: Vec<(f64, Poi)> = rows
             .into_iter()
-            .map(Poi::from)
+            .map(SqlitePoiRow::into_poi)
             .filter(|poi| matches_category_filter(poi, &cat_filter))
             .filter_map(|poi| {
                 let dist_km = center.distance_to(&poi.coordinates);
@@ -301,7 +270,7 @@ impl PoiRepository for SqlitePoiRepository {
 
         let results: Vec<Poi> = rows
             .into_iter()
-            .map(Poi::from)
+            .map(SqlitePoiRow::into_poi)
             .filter(|poi| matches_category_filter(poi, &cat_filter))
             .take(limit as usize)
             .collect();

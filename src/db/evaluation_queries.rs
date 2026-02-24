@@ -2,7 +2,6 @@ use crate::models::evaluation::{EvaluatedRoute, MetricCorrelation, RouteRating};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// Insert an evaluated route into the database
 pub async fn insert_evaluated_route(
     pool: &PgPool,
     route: &EvaluatedRoute,
@@ -50,7 +49,6 @@ pub async fn insert_evaluated_route(
     Ok(result.0)
 }
 
-/// Insert a route rating
 #[allow(clippy::too_many_arguments)]
 pub async fn insert_route_rating(
     pool: &PgPool,
@@ -82,7 +80,7 @@ pub async fn insert_route_rating(
     Ok(result.0)
 }
 
-/// Get an evaluated route by ID with its ratings
+/// Fetches an evaluated route by ID, including all associated ratings.
 pub async fn get_evaluated_route(
     pool: &PgPool,
     id: Uuid,
@@ -125,7 +123,6 @@ pub async fn get_evaluated_route(
     Ok(Some(route))
 }
 
-/// List evaluated routes with pagination
 pub async fn list_evaluated_routes(
     pool: &PgPool,
     limit: i64,
@@ -152,9 +149,8 @@ pub async fn list_evaluated_routes(
     Ok(rows.into_iter().map(|r| r.into()).collect())
 }
 
-/// Get correlation data between metrics and average human ratings
+/// Compute Pearson correlations between each route metric and average human rating.
 pub async fn get_correlation_data(pool: &PgPool) -> Result<Vec<MetricCorrelation>, sqlx::Error> {
-    // Fetch routes that have at least one rating
     let rows = sqlx::query_as::<_, CorrelationRow>(
         r#"
         SELECT
@@ -180,65 +176,46 @@ pub async fn get_correlation_data(pool: &PgPool) -> Result<Vec<MetricCorrelation
 
     let ratings: Vec<f64> = rows.iter().map(|r| r.avg_rating).collect();
 
-    type MetricExtractor = (&'static str, Box<dyn Fn(&CorrelationRow) -> Option<f64>>);
-    let metric_extractors: Vec<MetricExtractor> = vec![
-        ("circularity", Box::new(|r| r.circularity.map(|v| v as f64))),
-        ("convexity", Box::new(|r| r.convexity.map(|v| v as f64))),
-        (
-            "path_overlap_pct",
-            Box::new(|r| r.path_overlap_pct.map(|v| v as f64)),
-        ),
-        (
-            "poi_density_per_km",
-            Box::new(|r| r.poi_density_per_km.map(|v| v as f64)),
-        ),
-        (
-            "category_entropy",
-            Box::new(|r| r.category_entropy.map(|v| v as f64)),
-        ),
-        (
-            "landmark_coverage",
-            Box::new(|r| r.landmark_coverage.map(|v| v as f64)),
-        ),
+    type MetricField = (&'static str, fn(&CorrelationRow) -> Option<f32>);
+    let metrics: [MetricField; 6] = [
+        ("circularity", |r| r.circularity),
+        ("convexity", |r| r.convexity),
+        ("path_overlap_pct", |r| r.path_overlap_pct),
+        ("poi_density_per_km", |r| r.poi_density_per_km),
+        ("category_entropy", |r| r.category_entropy),
+        ("landmark_coverage", |r| r.landmark_coverage),
     ];
 
-    let mut correlations = Vec::new();
+    let correlations = metrics
+        .into_iter()
+        .filter_map(|(name, extract)| {
+            let pairs: Vec<(f64, f64)> = rows
+                .iter()
+                .zip(ratings.iter())
+                .filter_map(|(row, &rating)| extract(row).map(|m| (m as f64, rating)))
+                .collect();
 
-    for (name, extractor) in &metric_extractors {
-        let metric_values: Vec<Option<f64>> = rows.iter().map(extractor).collect();
-
-        // Filter to only rows where both metric and rating are present
-        let pairs: Vec<(f64, f64)> = metric_values
-            .iter()
-            .zip(ratings.iter())
-            .filter_map(|(mv, &rv)| mv.map(|m| (m, rv)))
-            .collect();
-
-        if pairs.len() >= 2 {
-            let r = pearson_correlation(&pairs);
-            correlations.push(MetricCorrelation {
+            (pairs.len() >= 2).then(|| MetricCorrelation {
                 metric_name: name.to_string(),
-                pearson_r: r,
+                pearson_r: pearson_correlation(&pairs),
                 sample_count: pairs.len(),
-            });
-        }
-    }
+            })
+        })
+        .collect();
 
     Ok(correlations)
 }
 
-/// Get total counts for evaluation stats
 pub async fn get_evaluation_counts(pool: &PgPool) -> Result<(i64, i64), sqlx::Error> {
-    let route_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM evaluated_routes")
+    let route_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM evaluated_routes")
         .fetch_one(pool)
         .await?;
-    let rating_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM route_ratings")
+    let rating_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM route_ratings")
         .fetch_one(pool)
         .await?;
-    Ok((route_count.0, rating_count.0))
+    Ok((route_count, rating_count))
 }
 
-/// Compute Pearson correlation coefficient
 fn pearson_correlation(pairs: &[(f64, f64)]) -> f64 {
     let n = pairs.len() as f64;
     if n < 2.0 {
@@ -260,8 +237,6 @@ fn pearson_correlation(pairs: &[(f64, f64)]) -> f64 {
 
     (numerator / denominator).clamp(-1.0, 1.0)
 }
-
-// --- Evaluation helper structs ---
 
 #[derive(sqlx::FromRow)]
 struct EvaluatedRouteRow {
