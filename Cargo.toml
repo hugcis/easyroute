@@ -23,7 +23,7 @@ serde_json = "1"
 sqlx = { version = "0.8", features = ["postgres", "runtime-tokio-native-tls", "macros", "uuid", "json", "time"] }
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json", "query"] }
 
 # Geospatial
 geo = "0.32"
@@ -31,6 +31,8 @@ geojson = "0.24"
 osmpbf = { version = "0.3", optional = true }
 rust-embed = { version = "8", optional = true }
 mime_guess = { version = "2", optional = true }
+rusqlite = { version = "0.32", optional = true }
+tokio-util = { version = "0.7", features = ["io"], optional = true }
 
 # Caching
 redis = { version = "1.0", features = ["tokio-comp", "connection-manager"] }
@@ -44,7 +46,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 time = { version = "0.3", features = ["serde", "formatting"] }
 urlencoding = "2"
-rand = "0.8"
+rand = "0.10"
 async-trait = "0.1"
 
 [dev-dependencies]
@@ -68,6 +70,7 @@ path = "src/bin/evaluate.rs"
 [[bin]]
 name = "proxy"
 path = "src/bin/proxy.rs"
+required-features = ["proxy"]
 
 [[bin]]
 name = "build_region"
@@ -83,3 +86,4 @@ required-features = ["sqlite"]
 default = []
 sqlite = ["sqlx/sqlite", "osmpbf"]
 mobile = ["sqlite", "rust-embed", "mime_guess"]
+proxy = ["rusqlite", "tokio-util"]
