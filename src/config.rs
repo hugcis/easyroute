@@ -60,10 +60,6 @@ pub struct RouteGeneratorConfig {
     /// Very relaxed tolerance level (as fraction, e.g., 0.5 = ±50%)
     pub tolerance_level_very_relaxed: f64,
 
-    /// Default distance tolerance as percentage of route distance
-    /// e.g., 0.2 = ±20% of target distance
-    pub default_distance_tolerance_pct: f64,
-
     /// Maximum number of retries per route generation attempt
     pub max_route_generation_retries: usize,
 
@@ -118,6 +114,36 @@ pub struct RouteGeneratorConfig {
 
     /// Scoring version: 1 = original, 2 = shape-aware (includes circularity/convexity/overlap)
     pub scoring_version: u32,
+
+    // --- POI Discovery Limits ---
+    /// Linear scaling factor for short-route POI limit: limit = distance_km × factor
+    pub poi_limit_short_factor: f64,
+    /// Minimum POI limit for short routes
+    pub poi_limit_short_min: f64,
+    /// Maximum POI limit for short routes
+    pub poi_limit_short_max: f64,
+    /// Area-based density factor for long-route POI limit: limit = π × r² × factor
+    pub poi_limit_long_density: f64,
+    /// Minimum POI limit for long routes
+    pub poi_limit_long_min: f64,
+    /// Maximum POI limit for long routes
+    pub poi_limit_long_max: f64,
+    /// Waypoint distance as fraction of target distance for area calculation
+    pub poi_limit_long_wp_dist_factor: f64,
+
+    // --- Candidate Selection Limits ---
+    /// Linear scaling factor for candidate pool size: candidates = distance_km × factor
+    pub candidate_limit_factor: f64,
+    /// Minimum candidate pool size
+    pub candidate_limit_min: f64,
+    /// Candidate pool cap for short routes (≤ candidate_medium_threshold_km)
+    pub candidate_limit_short: f64,
+    /// Candidate pool cap for medium routes (> candidate_medium_threshold_km, ≤ long_route_threshold_km)
+    pub candidate_limit_medium: f64,
+    /// Candidate pool cap for long routes (> long_route_threshold_km)
+    pub candidate_limit_long: f64,
+    /// Distance threshold (km) above which routes use the medium candidate pool cap
+    pub candidate_medium_threshold_km: f64,
 }
 
 impl Default for RouteGeneratorConfig {
@@ -129,7 +155,6 @@ impl Default for RouteGeneratorConfig {
             min_poi_distance_km: 0.3,
             tolerance_level_relaxed: 0.3,
             tolerance_level_very_relaxed: 0.5,
-            default_distance_tolerance_pct: 0.2,
             max_route_generation_retries: 4,
             waypoints_count_short: 2,
             waypoints_count_medium: 3,
@@ -149,6 +174,21 @@ impl Default for RouteGeneratorConfig {
             poi_score_weight_variation: 0.05,
             metrics_overlap_threshold_m: 25.0,
             scoring_version: 1,
+            // POI discovery limits
+            poi_limit_short_factor: 20.0,
+            poi_limit_short_min: 50.0,
+            poi_limit_short_max: 500.0,
+            poi_limit_long_density: 200.0,
+            poi_limit_long_min: 1_000.0,
+            poi_limit_long_max: 15_000.0,
+            poi_limit_long_wp_dist_factor: 0.45,
+            // Candidate selection limits
+            candidate_limit_factor: 10.0,
+            candidate_limit_min: 20.0,
+            candidate_limit_short: 100.0,
+            candidate_limit_medium: 300.0,
+            candidate_limit_long: 500.0,
+            candidate_medium_threshold_km: 5.0,
         }
     }
 }
@@ -188,10 +228,6 @@ impl RouteGeneratorConfig {
             tolerance_level_very_relaxed: parse_env!(
                 "ROUTE_TOLERANCE_LEVEL_VERY_RELAXED",
                 d.tolerance_level_very_relaxed
-            ),
-            default_distance_tolerance_pct: parse_env!(
-                "ROUTE_DEFAULT_DISTANCE_TOLERANCE_PCT",
-                d.default_distance_tolerance_pct
             ),
             max_route_generation_retries: parse_env!(
                 "ROUTE_MAX_GENERATION_RETRIES",
@@ -258,6 +294,42 @@ impl RouteGeneratorConfig {
                 d.metrics_overlap_threshold_m
             ),
             scoring_version: parse_env!("ROUTE_SCORING_VERSION", d.scoring_version),
+            // POI discovery limits
+            poi_limit_short_factor: parse_env!(
+                "ROUTE_POI_LIMIT_SHORT_FACTOR",
+                d.poi_limit_short_factor
+            ),
+            poi_limit_short_min: parse_env!("ROUTE_POI_LIMIT_SHORT_MIN", d.poi_limit_short_min),
+            poi_limit_short_max: parse_env!("ROUTE_POI_LIMIT_SHORT_MAX", d.poi_limit_short_max),
+            poi_limit_long_density: parse_env!(
+                "ROUTE_POI_LIMIT_LONG_DENSITY",
+                d.poi_limit_long_density
+            ),
+            poi_limit_long_min: parse_env!("ROUTE_POI_LIMIT_LONG_MIN", d.poi_limit_long_min),
+            poi_limit_long_max: parse_env!("ROUTE_POI_LIMIT_LONG_MAX", d.poi_limit_long_max),
+            poi_limit_long_wp_dist_factor: parse_env!(
+                "ROUTE_POI_LIMIT_LONG_WP_DIST_FACTOR",
+                d.poi_limit_long_wp_dist_factor
+            ),
+            // Candidate selection limits
+            candidate_limit_factor: parse_env!(
+                "ROUTE_CANDIDATE_LIMIT_FACTOR",
+                d.candidate_limit_factor
+            ),
+            candidate_limit_min: parse_env!("ROUTE_CANDIDATE_LIMIT_MIN", d.candidate_limit_min),
+            candidate_limit_short: parse_env!(
+                "ROUTE_CANDIDATE_LIMIT_SHORT",
+                d.candidate_limit_short
+            ),
+            candidate_limit_medium: parse_env!(
+                "ROUTE_CANDIDATE_LIMIT_MEDIUM",
+                d.candidate_limit_medium
+            ),
+            candidate_limit_long: parse_env!("ROUTE_CANDIDATE_LIMIT_LONG", d.candidate_limit_long),
+            candidate_medium_threshold_km: parse_env!(
+                "ROUTE_CANDIDATE_MEDIUM_THRESHOLD_KM",
+                d.candidate_medium_threshold_km
+            ),
         })
     }
 }
@@ -351,7 +423,6 @@ mod tests {
         let d = RouteGeneratorConfig::default();
         assert_eq!(d.poi_search_radius_multiplier, 1.0);
         assert_eq!(d.waypoint_distance_multiplier, 0.35);
-        assert_eq!(d.default_distance_tolerance_pct, 0.2);
         assert_eq!(d.max_route_generation_retries, 4);
         assert_eq!(d.waypoints_count_short, 2);
         assert_eq!(d.waypoints_count_medium, 3);

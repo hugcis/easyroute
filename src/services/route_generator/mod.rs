@@ -180,12 +180,20 @@ impl RouteGenerator {
         let poi_limit = if target_distance_km > self.config.long_route_threshold_km {
             // In dense areas, closest-first sorting means a small limit misses distant POIs.
             // Scale with area (πr²) so POIs at the required waypoint distances survive the limit.
-            let target_wp_dist = target_distance_km * POI_LIMIT_LONG_ROUTE_WP_DIST_FACTOR;
-            (std::f64::consts::PI * target_wp_dist * target_wp_dist * POI_LIMIT_LONG_ROUTE_DENSITY)
-                .clamp(POI_LIMIT_LONG_ROUTE_MIN, POI_LIMIT_LONG_ROUTE_MAX) as usize
+            let target_wp_dist = target_distance_km * self.config.poi_limit_long_wp_dist_factor;
+            (std::f64::consts::PI
+                * target_wp_dist
+                * target_wp_dist
+                * self.config.poi_limit_long_density)
+                .clamp(
+                    self.config.poi_limit_long_min,
+                    self.config.poi_limit_long_max,
+                ) as usize
         } else {
-            (target_distance_km * POI_LIMIT_SHORT_ROUTE_FACTOR)
-                .clamp(POI_LIMIT_SHORT_ROUTE_MIN, POI_LIMIT_SHORT_ROUTE_MAX) as usize
+            (target_distance_km * self.config.poi_limit_short_factor).clamp(
+                self.config.poi_limit_short_min,
+                self.config.poi_limit_short_max,
+            ) as usize
         };
 
         let raw_pois = self
@@ -210,14 +218,15 @@ impl RouteGenerator {
         }
 
         let max_candidates = if target_distance_km > self.config.long_route_threshold_km {
-            CANDIDATE_LIMIT_LONG
-        } else if target_distance_km > CANDIDATE_MEDIUM_THRESHOLD_KM {
-            CANDIDATE_LIMIT_MEDIUM
+            self.config.candidate_limit_long
+        } else if target_distance_km > self.config.candidate_medium_threshold_km {
+            self.config.candidate_limit_medium
         } else {
-            CANDIDATE_LIMIT_SHORT
+            self.config.candidate_limit_short
         };
-        let candidate_limit = (target_distance_km * CANDIDATE_LIMIT_FACTOR)
-            .clamp(CANDIDATE_LIMIT_MIN, max_candidates) as usize;
+        let candidate_limit = (target_distance_km * self.config.candidate_limit_factor)
+            .clamp(self.config.candidate_limit_min, max_candidates)
+            as usize;
         let raw_count = raw_pois.len();
         let candidate_pois = if target_distance_km > self.config.long_route_threshold_km {
             Self::select_stratified_candidates(
