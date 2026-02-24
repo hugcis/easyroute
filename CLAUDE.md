@@ -19,7 +19,7 @@ cargo run --bin ondevice -- --region=regions/monaco.db --open
 cargo run --bin build_region -- --input=osm/data/monaco-latest.osm.pbf --output=regions/monaco.db
 
 # Run Mapbox proxy (for mobile clients)
-cargo run --bin proxy
+cargo run --features proxy --bin proxy
 
 # Run evaluation harness
 cargo run --bin evaluate -- --scenario=monaco --runs=5
@@ -159,11 +159,11 @@ Config: `ROUTE_POI_SCORING_STRATEGY` (`simple`/`advanced`), `ROUTE_SCORING_VERSI
 
 ### Mapbox Proxy
 
-`src/bin/proxy.rs` — Rate-limited proxy for mobile clients. Authenticates via Bearer tokens (`PROXY_API_KEYS`), forwards to Mapbox with the server's `MAPBOX_API_KEY`. Env vars: `PROXY_API_KEYS`, `PROXY_RATE_LIMIT` (default 20/min), `PROXY_PORT` (default 4000).
+`src/bin/proxy.rs` — Rate-limited proxy for mobile clients. Authenticates via Bearer tokens (`PROXY_API_KEYS`), forwards to Mapbox with the server's `MAPBOX_API_KEY`. Also serves region catalog (`GET /v1/regions`) and region downloads (`GET /v1/regions/{id}/download`). Env vars: `PROXY_API_KEYS`, `PROXY_RATE_LIMIT` (default 20/min), `PROXY_PORT` (default 4000), `PROXY_REGIONS_DIR` (default `./regions`).
 
 ## Important Patterns
 
-**Semantic types**: Always use newtype wrappers (`DistanceKm`, `Coordinates`) instead of primitive `f64`. Validation at construction time.
+**Parse, don't validate**: Use newtype wrappers (`DistanceKm`, `Coordinates`, `RadiusMeters`) instead of primitives. Validate invariants at construction time (the parsing boundary), then trust the type downstream — no redundant runtime checks. Make illegal states unrepresentable.
 
 **Error handling**: `thiserror` `Error` enum in `src/error.rs`. All services return `Result<T, Error>`. No `.unwrap()` in production code.
 
@@ -247,6 +247,9 @@ Geofabrik extracts: `monaco` (test), `europe/france` (production), any region fr
 - **Tests failing with Mapbox/DB errors**: These tests are `#[ignore]`'d by default. Run with `cargo test -- --include-ignored` only when services are available
 - **PostGIS not found**: Use `postgis/postgis` Docker image, not plain `postgres`
 - **Slow tests**: `cargo test` is fast by default (~5s). Only `--include-ignored` adds DB/API latency
+- **xcconfig `//` in URLs**: `//` is a comment in xcconfig. Use `http:$()/$()/host:port` to escape
+- **xcconfig `#include` ordering**: `#include` must be at the **end** of the file, otherwise later definitions override included values
+- **reqwest version**: Must stay on 0.12 — reqwest 0.13 switches TLS to rustls which breaks iOS HTTPS
 
 ## Supplementary Documentation
 
