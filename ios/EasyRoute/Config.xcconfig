@@ -1,9 +1,11 @@
 // Config.xcconfig — Committed defaults for EasyRoute
 // Real secrets go in Local.xcconfig (gitignored). Copy Local.xcconfig.example to get started.
 
-#include? "Local.xcconfig"
-
 // Placeholder values — overridden by Local.xcconfig when present
 MAPBOX_API_KEY = MAPBOX_TOKEN_PLACEHOLDER
 MAPBOX_BASE_URL =
 MAPBOX_GL_TOKEN = MAPBOX_TOKEN_PLACEHOLDER
+PROXY_BASE_URL =
+PROXY_API_KEY =
+
+#include? "Local.xcconfig"

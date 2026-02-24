@@ -48,6 +48,11 @@ class ServerBridge: ObservableObject {
         port = 0
     }
 
+    func switchRegion(regionPath: String) {
+        self.regionPath = regionPath
+        restart()
+    }
+
     // MARK: - Private
 
     private func restart() {

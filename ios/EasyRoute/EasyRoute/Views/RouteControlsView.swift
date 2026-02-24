@@ -6,8 +6,12 @@ struct RouteControlsView: View {
     var locationManager: LocationManager
     var apiClient: APIClient?
     var selectedDetent: PresentationDetent
+    var onRegionChanged: (String) -> Void
     var onRoutesGenerated: () -> Void
 
+    @State private var showRegionManager = false
+
+    @Environment(RegionManager.self) var regionManager
     @State private var showCategoryPicker = false
     @State private var gpxShareURL: URL?
     @State private var showShareSheet = false
@@ -34,6 +38,9 @@ struct RouteControlsView: View {
             if let url = gpxShareURL {
                 ShareSheet(items: [url])
             }
+        }
+        .sheet(isPresented: $showRegionManager) {
+            RegionManagementView(onRegionChanged: onRegionChanged)
         }
     }
 
@@ -85,6 +92,7 @@ struct RouteControlsView: View {
 
                 Spacer()
 
+                regionButton
                 categoryFilterButton
             }
 
@@ -144,6 +152,18 @@ struct RouteControlsView: View {
             ))
             .presentationDetents([.medium, .large])
         }
+    }
+
+    // MARK: - Region Button
+
+    private var regionButton: some View {
+        Button { showRegionManager = true } label: {
+            Label(regionManager.activeRegionName, systemImage: "map")
+                .font(.subheadline)
+                .lineLimit(1)
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
     }
 
     // MARK: - Expanded Generate Button

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var server: ServerBridge
+    @Environment(RegionManager.self) var regionManager
 
     @State private var routeState = RouteState()
     @State private var locationManager = LocationManager()
@@ -30,6 +31,11 @@ struct ContentView: View {
                 }
             }
         }
+        .onChange(of: server.isRunning) { _, running in
+            if running {
+                apiClient = APIClient(port: server.port)
+            }
+        }
     }
 
     private var mainContent: some View {
@@ -44,6 +50,11 @@ struct ContentView: View {
                 locationManager: locationManager,
                 apiClient: apiClient,
                 selectedDetent: selectedDetent,
+                onRegionChanged: { newPath in
+                    routeState.clearRoutes()
+                    apiClient = nil
+                    server.switchRegion(regionPath: newPath)
+                },
                 onRoutesGenerated: fitCameraToRoute
             )
             .presentationDetents(

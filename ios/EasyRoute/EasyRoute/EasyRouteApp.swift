@@ -3,12 +3,14 @@ import SwiftUI
 @main
 struct EasyRouteApp: App {
     @StateObject private var server = ServerBridge()
+    @State private var regionManager = RegionManager()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(server)
+                .environment(regionManager)
                 .onAppear { startServer() }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
@@ -19,7 +21,7 @@ struct EasyRouteApp: App {
     }
 
     private func startServer() {
-        // Copy bundled region DB to Documents on first launch
+        // Copy bundled region DB to Documents on first launch (legacy path)
         let fm = FileManager.default
         let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
         let dest = docs.appendingPathComponent("region.db")
@@ -32,6 +34,10 @@ struct EasyRouteApp: App {
         let mapboxKey = Bundle.main.infoDictionary?["MAPBOX_API_KEY"] as? String ?? ""
         let proxyUrl = Bundle.main.infoDictionary?["MAPBOX_BASE_URL"] as? String
 
-        server.start(regionPath: dest.path, mapboxKey: mapboxKey, proxyUrl: proxyUrl)
+        server.start(
+            regionPath: regionManager.activeRegionPath,
+            mapboxKey: mapboxKey,
+            proxyUrl: proxyUrl
+        )
     }
 }

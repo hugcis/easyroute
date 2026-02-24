@@ -4,3 +4,7 @@
 MAPBOX_API_KEY = your_mapbox_token_here
 MAPBOX_GL_TOKEN = your_mapbox_token_here
 // MAPBOX_BASE_URL =
+
+// Region proxy (for downloading region DBs on device)
+// PROXY_BASE_URL = http:$()/$()/your-proxy-host:4000
+// PROXY_API_KEY = your_proxy_api_key_here
