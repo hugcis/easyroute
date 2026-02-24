@@ -36,34 +36,25 @@ impl RouteScorer {
         area_poi_count: usize,
     ) -> Result<Route> {
         let path = directions.to_coordinates();
+        let distance_km = directions.distance_km();
 
-        // Calculate distance from start for each POI (approximate)
         let poi_count = pois.len();
         let route_pois: Vec<RoutePoi> = pois
             .into_iter()
             .enumerate()
             .map(|(idx, poi)| {
-                // Rough approximation: distribute POIs along the route
                 let distance_fraction = (idx + 1) as f64 / (poi_count + 1) as f64;
-                let distance_from_start = directions.distance_km() * distance_fraction;
-
-                RoutePoi::new(poi, idx as u32 + 1, distance_from_start)
+                RoutePoi::new(poi, idx as u32 + 1, distance_km * distance_fraction)
             })
             .collect();
 
-        let mut route = Route::new(
-            directions.distance_km(),
-            directions.duration_minutes(),
-            path.clone(),
-            route_pois.clone(),
-        );
+        let mut route = Route::new(distance_km, directions.duration_minutes(), path, route_pois);
 
-        // Find and add snapped POIs
         match self
             .snapping_service
             .find_snapped_pois(
-                &path,
-                &route_pois,
+                &route.path,
+                &route.pois,
                 self.snap_radius_m,
                 preferences.poi_categories.as_deref(),
             )
@@ -76,16 +67,14 @@ impl RouteScorer {
             Err(e) => {
                 tracing::warn!(
                     error = %e,
-                    path_points = path.len(),
+                    path_points = route.path.len(),
                     snap_radius_m = self.snap_radius_m,
                     "Failed to snap POIs ({} path points, {}m radius): {}",
-                    path.len(), self.snap_radius_m, e
+                    route.path.len(), self.snap_radius_m, e
                 );
-                // Continue without snapped POIs
             }
         }
 
-        // Compute route quality metrics
         let metrics = RouteMetrics::compute_with_threshold(
             &route,
             area_poi_count,
@@ -112,6 +101,31 @@ impl RouteScorer {
         }
     }
 
+    /// Distance accuracy score: 1.0 for perfect match, 0.0 for 100%+ error
+    fn distance_accuracy(route: &Route, target_distance_km: f64) -> f32 {
+        let error_ratio = (route.distance_km - target_distance_km).abs() / target_distance_km;
+        (1.0 - error_ratio.min(1.0)) as f32
+    }
+
+    /// Average POI quality (0.0-1.0), or 0.0 if no POIs
+    fn avg_poi_quality(route: &Route, hidden_gems: bool) -> f32 {
+        if route.pois.is_empty() {
+            return 0.0;
+        }
+        route
+            .pois
+            .iter()
+            .map(|rp| rp.poi.quality_score(hidden_gems) / 100.0)
+            .sum::<f32>()
+            / route.pois.len() as f32
+    }
+
+    /// Category diversity score (0.0-1.0): unique categories / 3
+    fn category_diversity(route: &Route) -> f32 {
+        let unique: HashSet<_> = route.pois.iter().map(|rp| &rp.poi.category).collect();
+        (unique.len() as f32 / 3.0).min(1.0)
+    }
+
     /// V1 scoring: original algorithm (0-10)
     fn calculate_route_score_v1(
         &self,
@@ -119,32 +133,10 @@ impl RouteScorer {
         target_distance_km: f64,
         preferences: &RoutePreferences,
     ) -> f32 {
-        let mut score = 0.0;
-
-        // 1. Distance accuracy (0-3 points)
-        let distance_error = (route.distance_km - target_distance_km).abs();
-        let distance_error_ratio = distance_error / target_distance_km;
-        score += 3.0 * (1.0 - distance_error_ratio.min(1.0)) as f32;
-
-        // 2. POI count (0-3 points)
-        let poi_count_score = (route.pois.len() as f32).min(3.0);
-        score += poi_count_score;
-
-        // 3. POI quality (0-2 points)
-        if !route.pois.is_empty() {
-            let avg_poi_quality: f32 = route
-                .pois
-                .iter()
-                .map(|rp| rp.poi.quality_score(preferences.hidden_gems) / 100.0)
-                .sum::<f32>()
-                / route.pois.len() as f32;
-            score += 2.0 * avg_poi_quality;
-        }
-
-        // 4. Category diversity (0-2 points)
-        let unique_categories: HashSet<_> = route.pois.iter().map(|rp| &rp.poi.category).collect();
-        let diversity_score = (unique_categories.len() as f32 / 3.0).min(1.0);
-        score += 2.0 * diversity_score;
+        let score = 3.0 * Self::distance_accuracy(route, target_distance_km)
+            + (route.pois.len() as f32).min(3.0)
+            + 2.0 * Self::avg_poi_quality(route, preferences.hidden_gems)
+            + 2.0 * Self::category_diversity(route);
 
         score.clamp(0.0, 10.0)
     }
@@ -158,40 +150,17 @@ impl RouteScorer {
         target_distance_km: f64,
         preferences: &RoutePreferences,
     ) -> f32 {
-        let mut score = 0.0;
+        let poi_count_normalized = (route.pois.len() as f32 / 3.0).min(1.0);
 
-        // 1. Distance accuracy (0-2.5 points)
-        let distance_error = (route.distance_km - target_distance_km).abs();
-        let distance_error_ratio = distance_error / target_distance_km;
-        score += 2.5 * (1.0 - distance_error_ratio.min(1.0)) as f32;
+        let mut score = 2.5 * Self::distance_accuracy(route, target_distance_km)
+            + 2.0 * poi_count_normalized
+            + 1.5 * Self::avg_poi_quality(route, preferences.hidden_gems)
+            + Self::category_diversity(route);
 
-        // 2. POI count (0-2 points)
-        let poi_count_score = (route.pois.len() as f32 / 3.0).min(1.0);
-        score += 2.0 * poi_count_score;
-
-        // 3. POI quality (0-1.5 points)
-        if !route.pois.is_empty() {
-            let avg_poi_quality: f32 = route
-                .pois
-                .iter()
-                .map(|rp| rp.poi.quality_score(preferences.hidden_gems) / 100.0)
-                .sum::<f32>()
-                / route.pois.len() as f32;
-            score += 1.5 * avg_poi_quality;
-        }
-
-        // 4. Category diversity (0-1 point)
-        let unique_categories: HashSet<_> = route.pois.iter().map(|rp| &rp.poi.category).collect();
-        let diversity_score = (unique_categories.len() as f32 / 3.0).min(1.0);
-        score += 1.0 * diversity_score;
-
-        // 5. Route shape (0-2 points) — from metrics if available
         if let Some(ref metrics) = route.metrics {
             let shape_score = (metrics.circularity + metrics.convexity) / 2.0;
             score += 2.0 * shape_score;
-
-            // 6. Path diversity (0-1 point) — penalize overlap
-            score += 1.0 * (1.0 - metrics.path_overlap_pct);
+            score += 1.0 - metrics.path_overlap_pct;
         }
 
         score.clamp(0.0, 10.0)

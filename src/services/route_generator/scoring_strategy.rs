@@ -20,6 +20,47 @@ pub trait PoiScoringStrategy: Send + Sync {
     fn score_pois<'a>(&self, pois: &'a [Poi], context: &ScoringContext) -> Vec<(f32, &'a Poi)>;
 }
 
+/// Calculate score based on distance from ideal waypoint distance.
+/// Blends between lenient (short routes) and strict quadratic (long routes).
+/// `blend_start_km` and `blend_range_km` control the transition:
+///   - Simple: blend_start=12.0, blend_range=3.0 (blend from 12-15km)
+///   - Advanced: blend_start=5.0, blend_range=7.0 (blend from 5-12km)
+fn calculate_distance_score(
+    actual_dist: f64,
+    target_dist: f64,
+    target_distance_km: f64,
+    blend_start_km: f64,
+    blend_range_km: f64,
+) -> f32 {
+    if actual_dist < target_dist {
+        let ratio = (actual_dist / target_dist) as f32;
+        let blend_factor =
+            ((target_distance_km - blend_start_km) / blend_range_km).clamp(0.0, 1.0) as f32;
+        let lenient = ratio * 0.8 + 0.2;
+        let strict = ratio * ratio;
+        lenient * (1.0 - blend_factor) + strict * blend_factor
+    } else {
+        let excess_ratio = (actual_dist - target_dist) / target_dist;
+        (1.0 - (excess_ratio * 0.5).min(0.8)) as f32
+    }
+}
+
+/// Calculate variation offset to ensure different POIs are selected on each attempt
+fn calculate_variation_offset(poi_index: usize, attempt_seed: usize) -> f32 {
+    ((poi_index * VARIATION_MULTIPLIER + attempt_seed * VARIATION_OFFSET_BASE) % VARIATION_MOD)
+        as f32
+        * VARIATION_SCORE_FACTOR
+}
+
+/// Compute adaptive max distance filter based on target distance and config
+fn max_reasonable_distance(target_distance_km: f64, max_poi_distance_multiplier: f64) -> f64 {
+    if target_distance_km > 8.0 {
+        target_distance_km * 0.7
+    } else {
+        target_distance_km * max_poi_distance_multiplier
+    }
+}
+
 /// Simple distance-based scoring (original algorithm)
 pub struct SimpleStrategy {
     config: RouteGeneratorConfig,
@@ -29,64 +70,35 @@ impl SimpleStrategy {
     pub fn new(config: RouteGeneratorConfig) -> Self {
         Self { config }
     }
-
-    /// Calculate score based on distance from ideal waypoint distance.
-    /// Blends between lenient (short routes ≤5km) and strict quadratic (long routes ≥12km).
-    fn calculate_distance_score(
-        &self,
-        actual_dist: f64,
-        target_dist: f64,
-        target_distance_km: f64,
-    ) -> f32 {
-        if actual_dist < target_dist {
-            let ratio = (actual_dist / target_dist) as f32;
-            // Blend factor: 0.0 for ≤12km, 1.0 for ≥15km
-            let distance_blend_factor = ((target_distance_km - 12.0) / 3.0).clamp(0.0, 1.0) as f32;
-            let lenient = ratio * 0.8 + 0.2; // original formula
-            let strict = ratio * ratio; // quadratic penalty
-            lenient * (1.0 - distance_blend_factor) + strict * distance_blend_factor
-        } else {
-            // POIs farther than ideal are penalized more gradually
-            let excess_ratio = (actual_dist - target_dist) / target_dist;
-            (1.0 - (excess_ratio * 0.5).min(0.8)) as f32
-        }
-    }
-
-    /// Calculate variation offset to ensure different POIs are selected on each attempt
-    fn calculate_variation_offset(poi_index: usize, attempt_seed: usize) -> f32 {
-        ((poi_index * VARIATION_MULTIPLIER + attempt_seed * VARIATION_OFFSET_BASE) % VARIATION_MOD)
-            as f32
-            * VARIATION_SCORE_FACTOR
-    }
 }
 
 impl PoiScoringStrategy for SimpleStrategy {
     fn score_pois<'a>(&self, pois: &'a [Poi], context: &ScoringContext) -> Vec<(f32, &'a Poi)> {
-        // Adaptive distance filtering - stricter for accuracy
-        let max_reasonable_dist = if context.target_distance_km > 8.0 {
-            context.target_distance_km * 0.7
-        } else {
-            context.target_distance_km * self.config.max_poi_distance_multiplier
-        };
+        let max_dist = max_reasonable_distance(
+            context.target_distance_km,
+            self.config.max_poi_distance_multiplier,
+        );
 
         pois.iter()
             .enumerate()
             .filter_map(|(idx, poi)| {
                 let dist = context.start.distance_to(&poi.coordinates);
 
-                // Filter out POIs that are too close or too far
-                if dist < self.config.min_poi_distance_km || dist > max_reasonable_dist {
+                if dist < self.config.min_poi_distance_km || dist > max_dist {
                     return None;
                 }
 
-                let distance_score = self.calculate_distance_score(
+                // Simple: blend starts at 12km over 3km range
+                let distance_score = calculate_distance_score(
                     dist,
                     context.target_waypoint_distance,
                     context.target_distance_km,
+                    12.0,
+                    3.0,
                 );
-                let variation_offset = Self::calculate_variation_offset(idx, context.attempt_seed);
+                let variation = calculate_variation_offset(idx, context.attempt_seed);
 
-                Some((distance_score + variation_offset, poi))
+                Some((distance_score + variation, poi))
             })
             .collect()
     }
@@ -100,33 +112,6 @@ pub struct AdvancedStrategy {
 impl AdvancedStrategy {
     pub fn new(config: RouteGeneratorConfig) -> Self {
         Self { config }
-    }
-
-    /// Calculate score based on distance from ideal waypoint distance.
-    /// Blends between lenient (short routes ≤5km) and strict quadratic (long routes ≥12km).
-    fn calculate_distance_score(
-        &self,
-        actual_dist: f64,
-        target_dist: f64,
-        target_distance_km: f64,
-    ) -> f32 {
-        if actual_dist < target_dist {
-            let ratio = (actual_dist / target_dist) as f32;
-            let distance_blend_factor = ((target_distance_km - 5.0) / 7.0).clamp(0.0, 1.0) as f32;
-            let lenient = ratio * 0.8 + 0.2;
-            let strict = ratio * ratio;
-            lenient * (1.0 - distance_blend_factor) + strict * distance_blend_factor
-        } else {
-            let excess_ratio = (actual_dist - target_dist) / target_dist;
-            (1.0 - (excess_ratio * 0.5).min(0.8)) as f32
-        }
-    }
-
-    /// Calculate variation offset
-    fn calculate_variation_offset(poi_index: usize, attempt_seed: usize) -> f32 {
-        ((poi_index * VARIATION_MULTIPLIER + attempt_seed * VARIATION_OFFSET_BASE) % VARIATION_MOD)
-            as f32
-            * VARIATION_SCORE_FACTOR
     }
 
     /// Calculate angular diversity score
@@ -205,15 +190,11 @@ impl AdvancedStrategy {
 
 impl PoiScoringStrategy for AdvancedStrategy {
     fn score_pois<'a>(&self, pois: &'a [Poi], context: &ScoringContext) -> Vec<(f32, &'a Poi)> {
-        // Adaptive distance filtering - stricter for route accuracy
-        // For 5km route: max_dist = 5 * 0.6 = 3km
-        let max_reasonable_dist = if context.target_distance_km > 8.0 {
-            context.target_distance_km * 0.7
-        } else {
-            context.target_distance_km * self.config.max_poi_distance_multiplier
-        };
+        let max_dist = max_reasonable_distance(
+            context.target_distance_km,
+            self.config.max_poi_distance_multiplier,
+        );
 
-        // Calculate angles for already selected POIs
         let selected_angles: Vec<f64> = context
             .already_selected
             .iter()
@@ -225,47 +206,41 @@ impl PoiScoringStrategy for AdvancedStrategy {
             .filter_map(|(idx, poi)| {
                 let dist = context.start.distance_to(&poi.coordinates);
 
-                // Filter out POIs that are too close or too far
-                if dist < self.config.min_poi_distance_km || dist > max_reasonable_dist {
+                if dist < self.config.min_poi_distance_km || dist > max_dist {
                     return None;
                 }
 
-                let mut score = 0.0;
-
-                // 1. Distance score (weighted by config)
-                let distance_score = self.calculate_distance_score(
+                // Advanced: blend starts at 5km over 7km range
+                let dist_score = calculate_distance_score(
                     dist,
                     context.target_waypoint_distance,
                     context.target_distance_km,
+                    5.0,
+                    7.0,
                 );
-                score += distance_score * self.config.poi_score_weight_distance;
 
-                // 2. POI quality score (weighted by config)
                 let quality_score = poi.quality_score(context.preferences.hidden_gems) / 100.0;
-                score += quality_score * self.config.poi_score_weight_quality;
 
-                // 3. Angular diversity score (half of angular weight)
                 let angle = angle_from_start(context.start, &poi.coordinates);
                 let angular_score = Self::angular_diversity_score(angle, &selected_angles);
-                let angular_half = self.config.poi_score_weight_angular / 2.0;
-                score += angular_score * angular_half;
-
-                // 3b. Loop shape predictor (other half of angular weight)
                 let shape_score =
                     Self::loop_shape_score(context.start, poi, context.already_selected);
-                score += shape_score * angular_half;
+                let angular_half = self.config.poi_score_weight_angular / 2.0;
 
-                // 4. Cluster penalty (weighted by config)
                 let cluster_pen = Self::cluster_penalty(
                     poi,
                     context.already_selected,
                     self.config.poi_min_separation_km,
                 );
-                score -= cluster_pen * self.config.poi_score_weight_clustering;
 
-                // 5. Variation offset (weighted by config)
-                let variation_offset = Self::calculate_variation_offset(idx, context.attempt_seed);
-                score += variation_offset * self.config.poi_score_weight_variation;
+                let variation = calculate_variation_offset(idx, context.attempt_seed);
+
+                let score = dist_score * self.config.poi_score_weight_distance
+                    + quality_score * self.config.poi_score_weight_quality
+                    + angular_score * angular_half
+                    + shape_score * angular_half
+                    - cluster_pen * self.config.poi_score_weight_clustering
+                    + variation * self.config.poi_score_weight_variation;
 
                 Some((score, poi))
             })
@@ -280,67 +255,56 @@ mod tests {
 
     #[test]
     fn test_simple_strategy_distance_scoring_short_route() {
-        let config = RouteGeneratorConfig::default();
-        let strategy = SimpleStrategy::new(config.clone());
-
-        // Short route (3km): blend=0, uses original lenient formula
+        // Short route (3km): blend=0 for Simple (starts at 12km), uses lenient formula
         let target_dist = 1.0;
         let route_km = 3.0;
 
-        // POI at ideal distance should score ~1.0
-        let score_ideal = strategy.calculate_distance_score(1.0, target_dist, route_km);
+        let score_ideal = calculate_distance_score(1.0, target_dist, route_km, 12.0, 3.0);
         assert!(score_ideal > 0.9);
 
         // POI at 75% distance: lenient = 0.75*0.8+0.2 = 0.8
-        let score_close = strategy.calculate_distance_score(0.75, target_dist, route_km);
+        let score_close = calculate_distance_score(0.75, target_dist, route_km, 12.0, 3.0);
         assert!((score_close - 0.8).abs() < 0.01);
 
         // POI at 50% distance: lenient = 0.5*0.8+0.2 = 0.6
-        let score_half = strategy.calculate_distance_score(0.5, target_dist, route_km);
+        let score_half = calculate_distance_score(0.5, target_dist, route_km, 12.0, 3.0);
         assert!((score_half - 0.6).abs() < 0.01);
 
         // POI far from ideal (unchanged branch)
-        let score_far = strategy.calculate_distance_score(4.0, 2.0, route_km);
+        let score_far = calculate_distance_score(4.0, 2.0, route_km, 12.0, 3.0);
         assert!(score_far < 0.6);
     }
 
     #[test]
     fn test_simple_strategy_distance_scoring_long_route() {
-        let config = RouteGeneratorConfig::default();
-        let strategy = SimpleStrategy::new(config.clone());
-
-        // Long route (15km): blend=1.0, fully quadratic
+        // Long route (15km): blend=1.0 for Simple, fully quadratic
         let target_dist = 3.75;
         let route_km = 15.0;
 
-        // POI at ideal distance should score ~1.0
-        let score_ideal = strategy.calculate_distance_score(3.75, target_dist, route_km);
+        let score_ideal = calculate_distance_score(3.75, target_dist, route_km, 12.0, 3.0);
         assert!(score_ideal > 0.9);
 
         // POI at 75% distance: quadratic = (0.75)^2 = 0.5625
-        let score_close = strategy.calculate_distance_score(2.8125, target_dist, route_km);
+        let score_close = calculate_distance_score(2.8125, target_dist, route_km, 12.0, 3.0);
         assert!((score_close - 0.5625).abs() < 0.01);
 
         // POI at ~27% distance (1km/3.75km): quadratic ≈ 0.071
-        let score_far_below = strategy.calculate_distance_score(1.0, target_dist, route_km);
+        let score_far_below = calculate_distance_score(1.0, target_dist, route_km, 12.0, 3.0);
         assert!(score_far_below < 0.1);
     }
 
     #[test]
     fn test_simple_strategy_distance_scoring_blend_midpoint() {
-        let config = RouteGeneratorConfig::default();
-        let strategy = SimpleStrategy::new(config.clone());
-
         // 14.5km route: blend = (14.5-12)/3 ≈ 0.833, mostly strict
         let target_dist = 3.6;
         let route_km = 14.5;
 
         // POI at 50% distance: lenient=0.6, strict=0.25, blended ≈ 0.31
-        let score = strategy.calculate_distance_score(1.8, target_dist, route_km);
+        let score = calculate_distance_score(1.8, target_dist, route_km, 12.0, 3.0);
         assert!(score > 0.27 && score < 0.35, "score was {score}");
 
         // Still higher than fully quadratic (0.25)
-        let score_full_strict = strategy.calculate_distance_score(1.8, target_dist, 15.0);
+        let score_full_strict = calculate_distance_score(1.8, target_dist, 15.0, 12.0, 3.0);
         assert!(score > score_full_strict);
     }
 

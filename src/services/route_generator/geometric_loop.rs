@@ -50,11 +50,11 @@ impl GeometricLoopGenerator {
         let rotation_offset =
             pseudo_random_f64(seed, 0) * ROTATION_JITTER_RAD * 2.0 - ROTATION_JITTER_RAD;
 
-        let num_waypoints = GEOMETRIC_LOOP_NUM_WAYPOINTS;
         let mut waypoints = vec![start];
 
-        for i in 0..num_waypoints {
-            let base_angle = (i as f64 / num_waypoints as f64) * std::f64::consts::TAU;
+        for i in 0..GEOMETRIC_LOOP_NUM_WAYPOINTS {
+            let base_angle =
+                (i as f64 / GEOMETRIC_LOOP_NUM_WAYPOINTS as f64) * std::f64::consts::TAU;
             let angle = base_angle + rotation_offset;
 
             // Per-waypoint radius jitter: ±15% of base radius

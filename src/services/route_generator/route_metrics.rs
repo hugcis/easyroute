@@ -66,20 +66,9 @@ pub struct RouteMetrics {
 }
 
 impl RouteMetrics {
-    /// Compute all metrics from a Route object
+    /// Compute all metrics from a Route object using the default overlap threshold
     pub fn compute(route: &Route, area_poi_count: usize) -> Self {
-        let path = &route.path;
-        let total_poi_count = route.pois.len() + route.snapped_pois.len();
-
-        RouteMetrics {
-            circularity: compute_circularity(path),
-            convexity: compute_convexity(path),
-            path_overlap_pct: compute_path_overlap(path, DEFAULT_OVERLAP_THRESHOLD_M),
-            poi_density_per_km: compute_poi_density(total_poi_count, route.distance_km),
-            category_entropy: compute_category_entropy(route),
-            landmark_coverage: compute_landmark_coverage(route),
-            poi_density_context: PoiDensityContext::from_poi_count(area_poi_count),
-        }
+        Self::compute_with_threshold(route, area_poi_count, DEFAULT_OVERLAP_THRESHOLD_M)
     }
 
     /// Compute metrics with a custom overlap threshold

@@ -36,7 +36,6 @@ impl RouteGenerator {
         snap_radius_m: f64,
         config: RouteGeneratorConfig,
     ) -> Self {
-        // Create shared components
         let waypoint_selector = WaypointSelector::new(config.clone());
         let route_scorer =
             RouteScorer::new(snapping_service.clone(), snap_radius_m, config.clone());

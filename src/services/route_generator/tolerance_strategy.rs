@@ -99,25 +99,22 @@ impl ToleranceStrategy {
                 "Tolerance level exhausted: 0/{} attempts produced valid routes (target: {:.1}km ± {:.2}km)",
                 max_alternatives, target_distance_km, distance_tolerance
             );
+            return routes;
         }
 
-        // Score and rank routes if we got any
-        if !routes.is_empty() {
-            for route in &mut routes {
-                route.score =
-                    self.route_scorer
-                        .calculate_route_score(route, target_distance_km, preferences);
-            }
-
-            routes.sort_by(|a, b| {
-                b.score
-                    .partial_cmp(&a.score)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-
-            tracing::info!("Generated {} route alternatives", routes.len());
+        for route in &mut routes {
+            route.score =
+                self.route_scorer
+                    .calculate_route_score(route, target_distance_km, preferences);
         }
 
+        routes.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        tracing::info!("Generated {} route alternatives", routes.len());
         routes
     }
 
