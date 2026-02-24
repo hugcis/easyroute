@@ -130,7 +130,7 @@ impl Default for RouteGeneratorConfig {
             tolerance_level_relaxed: 0.3,
             tolerance_level_very_relaxed: 0.5,
             default_distance_tolerance_pct: 0.2,
-            max_route_generation_retries: 3,
+            max_route_generation_retries: 4,
             waypoints_count_short: 2,
             waypoints_count_medium: 3,
             waypoints_count_long: 4,
@@ -352,7 +352,7 @@ mod tests {
         assert_eq!(d.poi_search_radius_multiplier, 1.0);
         assert_eq!(d.waypoint_distance_multiplier, 0.35);
         assert_eq!(d.default_distance_tolerance_pct, 0.2);
-        assert_eq!(d.max_route_generation_retries, 3);
+        assert_eq!(d.max_route_generation_retries, 4);
         assert_eq!(d.waypoints_count_short, 2);
         assert_eq!(d.waypoints_count_medium, 3);
         assert_eq!(d.waypoints_count_long, 4);

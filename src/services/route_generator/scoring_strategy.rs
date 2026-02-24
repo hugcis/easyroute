@@ -52,10 +52,12 @@ fn calculate_variation_offset(poi_index: usize, attempt_seed: usize) -> f32 {
         * VARIATION_SCORE_FACTOR
 }
 
-/// Compute adaptive max distance filter based on target distance and config
+/// Compute adaptive max distance filter based on target distance and config.
+/// For long routes (>8km), scales up the multiplier to allow more distant POI candidates.
 fn max_reasonable_distance(target_distance_km: f64, max_poi_distance_multiplier: f64) -> f64 {
     if target_distance_km > 8.0 {
-        target_distance_km * 0.7
+        let scale = (0.7 + (target_distance_km - 8.0) * 0.02).min(0.85);
+        target_distance_km * scale
     } else {
         target_distance_km * max_poi_distance_multiplier
     }

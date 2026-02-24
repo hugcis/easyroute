@@ -53,7 +53,7 @@ impl WaypointSelector {
 
         let num_waypoints =
             self.calculate_waypoint_count(target_distance_km, pois.len(), attempt_seed);
-        let multiplier = self.get_waypoint_distance_multiplier(num_waypoints);
+        let multiplier = self.get_waypoint_distance_multiplier(num_waypoints, target_distance_km);
         let target_waypoint_distance = target_distance_km * multiplier;
 
         tracing::debug!(
@@ -243,10 +243,15 @@ impl WaypointSelector {
         }
     }
 
-    /// Get the appropriate distance multiplier for the given waypoint count
-    /// More waypoints require tighter loops (smaller multiplier) to prevent overshooting
-    fn get_waypoint_distance_multiplier(&self, waypoint_count: usize) -> f64 {
-        match waypoint_count {
+    /// Get the appropriate distance multiplier for the given waypoint count.
+    /// For long routes (above `long_route_threshold_km`), scales the multiplier up
+    /// linearly to push waypoints further from start and prevent undersized routes.
+    fn get_waypoint_distance_multiplier(
+        &self,
+        waypoint_count: usize,
+        target_distance_km: f64,
+    ) -> f64 {
+        let base = match waypoint_count {
             2 => self.config.waypoint_distance_multiplier_2wp,
             3 => self.config.waypoint_distance_multiplier_3wp,
             4 => self.config.waypoint_distance_multiplier_4wp,
@@ -257,6 +262,14 @@ impl WaypointSelector {
                 );
                 self.config.waypoint_distance_multiplier_3wp
             }
+        };
+
+        if target_distance_km > self.config.long_route_threshold_km {
+            let excess = target_distance_km - self.config.long_route_threshold_km;
+            let scale = 1.0 + excess * 0.05; // +5% per km above threshold
+            (base * scale).min(0.65)
+        } else {
+            base
         }
     }
 
@@ -476,32 +489,67 @@ mod tests {
         let config = RouteGeneratorConfig::default();
         let selector = WaypointSelector::new(config);
 
+        // Short routes: base multipliers unchanged
         assert_eq!(
-            selector.get_waypoint_distance_multiplier(2),
+            selector.get_waypoint_distance_multiplier(2, 5.0),
             0.50,
-            "2 waypoints should use 0.50 multiplier"
+            "2 waypoints should use 0.50 multiplier for short route"
         );
         assert_eq!(
-            selector.get_waypoint_distance_multiplier(3),
+            selector.get_waypoint_distance_multiplier(3, 5.0),
             0.35,
-            "3 waypoints should use 0.35 multiplier"
+            "3 waypoints should use 0.35 multiplier for short route"
         );
         assert_eq!(
-            selector.get_waypoint_distance_multiplier(4),
+            selector.get_waypoint_distance_multiplier(4, 5.0),
             0.28,
-            "4 waypoints should use 0.28 multiplier"
+            "4 waypoints should use 0.28 multiplier for short route"
         );
 
         // Unknown count should fall back to 3-waypoint multiplier
         assert_eq!(
-            selector.get_waypoint_distance_multiplier(5),
+            selector.get_waypoint_distance_multiplier(5, 5.0),
             0.35,
             "Unknown waypoint count should fallback to 3-waypoint multiplier"
         );
         assert_eq!(
-            selector.get_waypoint_distance_multiplier(1),
+            selector.get_waypoint_distance_multiplier(1, 5.0),
             0.35,
             "Invalid waypoint count should fallback to 3-waypoint multiplier"
+        );
+    }
+
+    #[test]
+    fn test_distance_multiplier_scales_for_long_routes() {
+        let config = RouteGeneratorConfig::default();
+        let selector = WaypointSelector::new(config);
+
+        // 9km route (1km above 8km threshold): scale = 1.0 + 1.0 * 0.05 = 1.05
+        let mult_9km = selector.get_waypoint_distance_multiplier(3, 9.0);
+        assert!(
+            (mult_9km - 0.3675).abs() < 0.001,
+            "9km/3wp: expected ~0.3675, got {mult_9km}"
+        );
+
+        // 12km route (4km above): scale = 1.0 + 4.0 * 0.05 = 1.20
+        let mult_12km = selector.get_waypoint_distance_multiplier(3, 12.0);
+        assert!(
+            (mult_12km - 0.42).abs() < 0.001,
+            "12km/3wp: expected ~0.42, got {mult_12km}"
+        );
+
+        // 15km route (7km above): scale = 1.0 + 7.0 * 0.05 = 1.35 → 0.35*1.35=0.4725
+        let mult_15km = selector.get_waypoint_distance_multiplier(3, 15.0);
+        assert!(
+            (mult_15km - 0.4725).abs() < 0.001,
+            "15km/3wp: expected ~0.4725, got {mult_15km}"
+        );
+
+        // Very long route should be capped at 0.65
+        let mult_30km = selector.get_waypoint_distance_multiplier(2, 30.0);
+        assert!(
+            (mult_30km - 0.65).abs() < 0.001,
+            "30km/2wp: should be capped at 0.65, got {mult_30km}"
         );
     }
 
