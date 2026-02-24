@@ -153,7 +153,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let route_refs: Vec<&Route> = all_routes.iter().collect();
-        let metrics_agg = MetricsAggregate::from_routes(&route_refs);
+        let metrics_agg = MetricsAggregate::from_routes(&route_refs, scenario.distance_km);
 
         results.push(ScenarioResult {
             scenario: (*scenario).clone(),
@@ -215,6 +215,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "category_entropy_std": agg.category_entropy.std_dev,
                         "landmark_coverage_mean": agg.landmark_coverage.mean,
                         "landmark_coverage_std": agg.landmark_coverage.std_dev,
+                        "distance_accuracy_mean": agg.distance_accuracy.mean,
+                        "distance_accuracy_std": agg.distance_accuracy.std_dev,
+                        "route_score_mean": agg.route_score.mean,
+                        "route_score_std": agg.route_score.std_dev,
                     });
                 }
                 obj

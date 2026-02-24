@@ -43,6 +43,13 @@ pub fn default_scenarios() -> Vec<EvalScenario> {
             expected_density: PoiDensityContext::Dense,
         },
         EvalScenario {
+            name: "paris_9km_walk".to_string(),
+            start: Coordinates::new(48.8566, 2.3522).unwrap(),
+            distance_km: 9.0,
+            mode: TransportMode::Walk,
+            expected_density: PoiDensityContext::Dense,
+        },
+        EvalScenario {
             name: "paris_12km_bike".to_string(),
             start: Coordinates::new(48.8566, 2.3522).unwrap(),
             distance_km: 12.0,

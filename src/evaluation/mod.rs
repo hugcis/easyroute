@@ -40,6 +40,8 @@ pub struct MetricsAggregate {
     pub poi_density_per_km: StatSummary,
     pub category_entropy: StatSummary,
     pub landmark_coverage: StatSummary,
+    pub distance_accuracy: StatSummary,
+    pub route_score: StatSummary,
 }
 
 /// Mean and standard deviation
@@ -50,14 +52,21 @@ pub struct StatSummary {
 }
 
 impl MetricsAggregate {
-    /// Aggregate metrics from a collection of routes
-    pub fn from_routes(routes: &[&Route]) -> Option<Self> {
+    /// Aggregate metrics from a collection of routes.
+    /// `target_distance_km` is used to compute distance accuracy (achieved/target ratio).
+    pub fn from_routes(routes: &[&Route], target_distance_km: f64) -> Option<Self> {
         let metrics: Vec<&RouteMetrics> =
             routes.iter().filter_map(|r| r.metrics.as_ref()).collect();
 
         if metrics.is_empty() {
             return None;
         }
+
+        let distance_accuracies: Vec<f32> = routes
+            .iter()
+            .map(|r| (r.distance_km / target_distance_km) as f32)
+            .collect();
+        let route_scores: Vec<f32> = routes.iter().map(|r| r.score).collect();
 
         Some(MetricsAggregate {
             circularity: stat_summary(&metrics.iter().map(|m| m.circularity).collect::<Vec<_>>()),
@@ -86,6 +95,8 @@ impl MetricsAggregate {
                     .map(|m| m.landmark_coverage)
                     .collect::<Vec<_>>(),
             ),
+            distance_accuracy: stat_summary(&distance_accuracies),
+            route_score: stat_summary(&route_scores),
         })
     }
 }
@@ -146,6 +157,14 @@ pub fn format_scenario_result(result: &ScenarioResult) -> String {
         out.push_str(&format!(
             "  landmark_coverage:{:.2} +/- {:.2}\n",
             agg.landmark_coverage.mean, agg.landmark_coverage.std_dev,
+        ));
+        out.push_str(&format!(
+            "  distance_accuracy:{:.2} +/- {:.2}\n",
+            agg.distance_accuracy.mean, agg.distance_accuracy.std_dev,
+        ));
+        out.push_str(&format!(
+            "  route_score:      {:.1} +/- {:.1}\n",
+            agg.route_score.mean, agg.route_score.std_dev,
         ));
     } else {
         out.push_str("  (no routes with metrics)\n");

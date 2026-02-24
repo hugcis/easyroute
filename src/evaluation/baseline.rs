@@ -32,6 +32,10 @@ pub struct BaselineMetrics {
     pub poi_density_per_km: f32,
     pub category_entropy: f32,
     pub landmark_coverage: f32,
+    #[serde(default)]
+    pub distance_accuracy: f32,
+    #[serde(default)]
+    pub route_score: f32,
 }
 
 // ── Comparison types ────────────────────────────────────────
@@ -80,6 +84,8 @@ impl Baseline {
                     poi_density_per_km: agg.poi_density_per_km.mean,
                     category_entropy: agg.category_entropy.mean,
                     landmark_coverage: agg.landmark_coverage.mean,
+                    distance_accuracy: agg.distance_accuracy.mean,
+                    route_score: agg.route_score.mean,
                 });
                 BaselineScenario {
                     name: r.scenario.name.clone(),
@@ -199,6 +205,27 @@ pub fn compare(
                 threshold,
                 false,
             ));
+            // Distance accuracy: closer to 1.0 is better, but we track as higher-is-better
+            // since undersized routes (< 1.0) are the problem we're fixing
+            if base_m.distance_accuracy > 0.0 {
+                metric_comparisons.push(compare_metric(
+                    "distance_accuracy",
+                    cur_agg.distance_accuracy.mean,
+                    base_m.distance_accuracy,
+                    threshold,
+                    true,
+                ));
+            }
+            // Route score: higher is better
+            if base_m.route_score > 0.0 {
+                metric_comparisons.push(compare_metric(
+                    "route_score",
+                    cur_agg.route_score.mean,
+                    base_m.route_score,
+                    threshold,
+                    true,
+                ));
+            }
         }
 
         let regressions = metric_comparisons.iter().filter(|m| m.regressed).count();
@@ -411,6 +438,8 @@ mod tests {
                         poi_density_per_km: 2.5,
                         category_entropy: 1.8,
                         landmark_coverage: 0.6,
+                        distance_accuracy: 0.95,
+                        route_score: 7.5,
                     }),
                 },
                 BaselineScenario {
@@ -449,6 +478,8 @@ mod tests {
                     poi_density_per_km: 3.0,
                     category_entropy: 2.0,
                     landmark_coverage: 0.7,
+                    distance_accuracy: 0.98,
+                    route_score: 8.0,
                 }),
             }],
         };
@@ -490,6 +521,14 @@ mod tests {
                 landmark_coverage: crate::evaluation::StatSummary {
                     mean: 0.65,
                     std_dev: 0.05,
+                },
+                distance_accuracy: crate::evaluation::StatSummary {
+                    mean: 0.96,
+                    std_dev: 0.03,
+                },
+                route_score: crate::evaluation::StatSummary {
+                    mean: 7.8,
+                    std_dev: 0.5,
                 },
             }),
         };
