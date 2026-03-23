@@ -35,7 +35,7 @@ rusqlite = { version = "0.32", optional = true }
 tokio-util = { version = "0.7", features = ["io"], optional = true }
 
 # Caching
-redis = { version = "1.0", features = ["tokio-comp", "connection-manager"] }
+redis = { version = "1.1", features = ["tokio-comp", "connection-manager"] }
 moka = { version = "0.12", features = ["future"] }
 
 # Utilities
