@@ -27,7 +27,7 @@ reqwest = { version = "0.12", features = ["json"] }
 
 # Geospatial
 geo = "0.32"
-geojson = "0.24"
+geojson = "1.0"
 osmpbf = { version = "0.3", optional = true }
 rust-embed = { version = "8", optional = true }
 mime_guess = { version = "2", optional = true }
